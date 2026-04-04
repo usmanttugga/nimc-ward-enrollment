@@ -3,6 +3,7 @@ import { User } from 'firebase/auth';
 import { signOut } from 'firebase/auth';
 import { collection, query, orderBy, getDocs } from 'firebase/firestore';
 import { auth, db } from '../firebase';
+import Logo from '../components/Logo';
 
 interface Props { user: User; }
 
@@ -77,12 +78,18 @@ export default function AdminPage({ user }: Props) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-green-800 text-white px-4 py-3 flex items-center justify-between shadow">
-        <div>
-          <div className="font-bold text-lg">NIMC Ward Enrollment — Admin</div>
-          <div className="text-green-200 text-xs">{user.displayName || user.email}</div>
+      <header className="bg-teal-800 text-white px-4 py-3 flex items-center justify-between shadow">
+        <div className="flex items-center gap-3">
+          <Logo size={38} />
+          <div>
+            <div className="font-black text-sm leading-tight">
+              <span className="text-pink-300">2 PLUS </span>
+              <span className="text-teal-200">TECHNOLOGIES</span>
+            </div>
+            <div className="text-teal-300 text-xs">NIMC Ward Enrollment · Admin</div>
+          </div>
         </div>
-        <button onClick={() => signOut(auth)} className="text-sm bg-green-700 hover:bg-green-600 px-3 py-1.5 rounded-lg">
+        <button onClick={() => signOut(auth)} className="text-sm bg-teal-700 hover:bg-teal-600 px-3 py-1.5 rounded-lg">
           Logout
         </button>
       </header>
@@ -91,7 +98,7 @@ export default function AdminPage({ user }: Props) {
         <div className="flex gap-2 mb-4">
           {(['enrollments', 'agents'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === t ? 'bg-green-700 text-white' : 'bg-white text-gray-600 border'}`}>
+              className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === t ? 'bg-teal-700 text-white' : 'bg-white text-gray-600 border'}`}>
               {t === 'enrollments' ? 'Enrollment Records' : 'Agents'}
             </button>
           ))}
@@ -109,7 +116,7 @@ export default function AdminPage({ user }: Props) {
                   onChange={e => setSearch(e.target.value)}
                   className="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1 sm:w-64 focus:outline-none focus:ring-2 focus:ring-green-500" />
                 <button onClick={exportCsv}
-                  className="bg-green-700 hover:bg-green-800 text-white text-sm px-4 py-2 rounded-lg whitespace-nowrap">
+                  className="bg-teal-700 hover:bg-teal-800 text-white text-sm px-4 py-2 rounded-lg whitespace-nowrap">
                   ↓ Export CSV
                 </button>
               </div>
@@ -140,7 +147,7 @@ export default function AdminPage({ user }: Props) {
                         <td className="px-4 py-3">{r.lgaName}</td>
                         <td className="px-4 py-3">{r.wardName}</td>
                         <td className="px-4 py-3 font-mono text-xs">{r.deviceId}</td>
-                        <td className="px-4 py-3 text-right font-semibold text-green-700">{r.dailyFigures?.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-teal-700">{r.dailyFigures?.toLocaleString()}</td>
                         <td className="px-4 py-3 max-w-xs">
                           {r.issuesComplaints
                             ? <span className="text-orange-600 text-xs">{r.issuesComplaints}</span>

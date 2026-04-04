@@ -6,6 +6,7 @@ import {
 } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
+import Logo from '../components/Logo';
 
 export default function AuthPage() {
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -50,9 +51,15 @@ export default function AuthPage() {
     <div className="min-h-screen bg-green-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-lg w-full max-w-md p-8">
         <div className="text-center mb-6">
-          <div className="text-5xl mb-2">🇳🇬</div>
-          <h1 className="text-2xl font-bold text-green-800">NIMC Ward Enrollment</h1>
-          <p className="text-gray-500 text-sm mt-1">Daily Enrollment Data Collection Portal</p>
+          <div className="flex justify-center mb-2">
+            <Logo size={72} />
+          </div>
+          <div className="text-xl font-black tracking-tight">
+            <span className="text-pink-600">2 PLUS </span>
+            <span className="text-teal-600">TECHNOLOGIES</span>
+          </div>
+          <div className="text-xs text-gray-400 uppercase tracking-widest mb-1">Innovative Minds</div>
+          <p className="text-gray-500 text-sm mt-2">NIMC Ward Enrollment Portal</p>
         </div>
 
         <div className="flex rounded-lg overflow-hidden border border-gray-200 mb-6">

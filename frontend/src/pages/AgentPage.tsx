@@ -4,6 +4,7 @@ import { collection, addDoc, query, where, orderBy, getDocs } from 'firebase/fir
 import { signOut } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { GEO_DATA } from '../geoData';
+import Logo from '../components/Logo';
 
 interface Props { user: User; }
 
@@ -90,12 +91,18 @@ export default function AgentPage({ user }: Props) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-green-800 text-white px-4 py-3 flex items-center justify-between shadow">
-        <div>
-          <div className="font-bold text-lg">NIMC Ward Enrollment</div>
-          <div className="text-green-200 text-xs">{user.displayName || user.email}</div>
+      <header className="bg-teal-800 text-white px-4 py-3 flex items-center justify-between shadow">
+        <div className="flex items-center gap-3">
+          <Logo size={38} />
+          <div>
+            <div className="font-black text-sm leading-tight">
+              <span className="text-pink-300">2 PLUS </span>
+              <span className="text-teal-200">TECHNOLOGIES</span>
+            </div>
+            <div className="text-teal-300 text-xs">NIMC Ward Enrollment · {user.displayName || user.email}</div>
+          </div>
         </div>
-        <button onClick={() => signOut(auth)} className="text-sm bg-green-700 hover:bg-green-600 px-3 py-1.5 rounded-lg">
+        <button onClick={() => signOut(auth)} className="text-sm bg-teal-700 hover:bg-teal-600 px-3 py-1.5 rounded-lg">
           Logout
         </button>
       </header>
@@ -104,7 +111,7 @@ export default function AgentPage({ user }: Props) {
         <div className="flex gap-2 mb-4">
           {(['form', 'history'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === t ? 'bg-green-700 text-white' : 'bg-white text-gray-600 border'}`}>
+              className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === t ? 'bg-teal-700 text-white' : 'bg-white text-gray-600 border'}`}>
               {t === 'form' ? 'Submit Enrollment' : 'My Submissions'}
             </button>
           ))}
@@ -164,7 +171,7 @@ export default function AgentPage({ user }: Props) {
               {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>}
               {success && <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-3 py-2">{success}</div>}
               <button type="submit" disabled={submitting}
-                className="w-full bg-green-700 hover:bg-green-800 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-60">
+                className="w-full bg-teal-700 hover:bg-teal-800 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-60">
                 {submitting ? 'Submitting...' : 'Submit Enrollment'}
               </button>
             </form>

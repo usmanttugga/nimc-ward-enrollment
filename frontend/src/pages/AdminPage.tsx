@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { User, signOut, createUserWithEmailAndPassword, updateProfile, getAuth } from 'firebase/auth';
-import { collection, query, orderBy, getDocs, doc, setDoc } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { initializeApp } from 'firebase/app';
 import * as XLSX from 'xlsx';
 import { auth, db } from '../firebase';
@@ -91,6 +91,16 @@ export default function AdminPage({ user: _user }: Props) {
       setAddError(msg[err.code] || err.message);
     } finally {
       setAddingUser(false);
+    }
+  }
+
+  async function handleDeleteUser(agentId: string, agentName: string) {
+    if (!window.confirm(`Delete "${agentName}"? This removes their profile. Their enrollment records will be preserved.`)) return;
+    try {
+      await deleteDoc(doc(db, 'users', agentId));
+      setAgents(prev => prev.filter(a => a.id !== agentId));
+    } catch (err: any) {
+      alert('Failed to delete user: ' + err.message);
     }
   }
 
@@ -321,6 +331,7 @@ export default function AdminPage({ user: _user }: Props) {
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Agent</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Registered</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -336,6 +347,12 @@ export default function AdminPage({ user: _user }: Props) {
                           </td>
                           <td className="px-4 py-3.5 text-gray-500">{a.email}</td>
                           <td className="px-4 py-3.5 text-gray-400 text-xs">{new Date(a.createdAt).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</td>
+                          <td className="px-4 py-3.5">
+                            <button onClick={() => handleDeleteUser(a.id, a.name)}
+                              className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors font-medium">
+                              Delete
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>

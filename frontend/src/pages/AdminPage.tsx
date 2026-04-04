@@ -96,7 +96,7 @@ export default function AdminPage({ user: _user }: Props) {
     const wsData: (string | number)[][] = [
       ['Daily Ward Enrollment Report', '', '', '', '', '', ''],
       ['', '', '', '', '', '', ''],
-      ['Name of FEP:', '2 PLUS TECHNOLOGIES', '', '', 'Date of Reporting:', reportDateFormatted, ''],
+      ['Name of FEP: 2 PLUS TECHNOLOGIES', '', '', '', 'Date of Reporting: ' + reportDateFormatted, '', ''],
       ['', '', '', '', '', '', ''],
       ['S/No.', 'States', 'Local Govt Areas', 'Ward', 'Device ID', 'Daily Enrolment Figures', 'Issues/Complaint'],
     ];
@@ -118,8 +118,8 @@ export default function AdminPage({ user: _user }: Props) {
     // Merges
     ws['!merges'] = [
       { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },  // Title: A1:G1
-      { s: { r: 2, c: 1 }, e: { r: 2, c: 3 } },  // FEP value: B3:D3
-      { s: { r: 2, c: 5 }, e: { r: 2, c: 6 } },  // Date value: F3:G3
+      { s: { r: 2, c: 0 }, e: { r: 2, c: 3 } },  // FEP: A3:D3
+      { s: { r: 2, c: 4 }, e: { r: 2, c: 6 } },  // Date: E3:G3
     ];
 
     // Column widths

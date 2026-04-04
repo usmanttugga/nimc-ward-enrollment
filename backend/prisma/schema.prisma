@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model State {
+  id   String @id @default(cuid())
+  name String @unique
+  lgas Lga[]
+}
+
+model Lga {
+  id      String @id @default(cuid())
+  name    String
+  stateId String
+  state   State  @relation(fields: [stateId], references: [id])
+  wards   Ward[]
+
+  @@unique([name, stateId])
+}
+
+model Ward {
+  id          String       @id @default(cuid())
+  name        String
+  lgaId       String
+  lga         Lga          @relation(fields: [lgaId], references: [id])
+  submissions Enrollment[]
+
+  @@unique([name, lgaId])
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  passwordHash String
+  name         String
+  role         Role         @default(AGENT)
+  enrollments  Enrollment[]
+  createdAt    DateTime     @default(now())
+}
+
+enum Role {
+  AGENT
+  ADMIN
+}
+
+model Enrollment {
+  id               String   @id @default(cuid())
+  date             DateTime @db.Date
+  stateId          String
+  lgaId            String
+  wardId           String
+  ward             Ward     @relation(fields: [wardId], references: [id])
+  deviceId         String
+  dailyFigures     Int
+  issuesComplaints String?
+  agentId          String
+  agent            User     @relation(fields: [agentId], references: [id])
+  submittedAt      DateTime @default(now())
+}

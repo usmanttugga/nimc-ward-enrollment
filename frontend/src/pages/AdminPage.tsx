@@ -33,6 +33,8 @@ export default function AdminPage({ user: _user }: Props) {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [search, setSearch] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -55,8 +57,11 @@ export default function AdminPage({ user: _user }: Props) {
 
   const filtered = enrollments.filter(r => {
     const q = search.toLowerCase();
-    return !q || [r.agentName, r.stateName, r.lgaName, r.wardName, r.deviceId]
+    const matchSearch = !q || [r.agentName, r.stateName, r.lgaName, r.wardName, r.deviceId]
       .some(v => v?.toLowerCase().includes(q));
+    const matchFrom = !dateFrom || r.date >= dateFrom;
+    const matchTo = !dateTo || r.date <= dateTo;
+    return matchSearch && matchFrom && matchTo;
   });
 
   const totalFigures = filtered.reduce((sum, r) => sum + (r.dailyFigures || 0), 0);
@@ -111,10 +116,16 @@ export default function AdminPage({ user: _user }: Props) {
                 <h2 className="font-semibold text-gray-800">Enrollment Records</h2>
                 <p className="text-sm text-gray-500">{filtered.length} records · {totalFigures.toLocaleString()} total enrollees</p>
               </div>
-              <div className="flex gap-2 w-full sm:w-auto">
+              <div className="flex gap-2 w-full flex-wrap">
                 <input type="text" placeholder="Search agent, state, LGA, ward..." value={search}
                   onChange={e => setSearch(e.target.value)}
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1 sm:w-64 focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1 min-w-[160px] focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                  title="From date"
+                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                  title="To date"
+                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
                 <button onClick={exportCsv}
                   className="bg-teal-700 hover:bg-teal-800 text-white text-sm px-4 py-2 rounded-lg whitespace-nowrap">
                   ↓ Export CSV

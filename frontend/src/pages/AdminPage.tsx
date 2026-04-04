@@ -76,17 +76,28 @@ export default function AdminPage({ user: _user }: Props) {
   }
 
   function exportCsv() {
-    const reportDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    const fileName = `2PLUS TECH WARD ENROLLMENT ${reportDate.replace(/\//g, '-')}.xlsx`;
+    // Use the dateFrom filter as the report date, fallback to today
+    const reportDateRaw = dateFrom || new Date().toISOString().split('T')[0];
+    const [yr, mo, dy] = reportDateRaw.split('-');
+    const reportDateFormatted = `${dy}/${mo}/${yr}`;
+    const fileDate = `${dy}-${mo}-${yr}`;
+    const fileName = `2PLUS TECH WARD ENROLLMENT ${fileDate}.xlsx`;
 
     const wb = XLSX.utils.book_new();
 
-    // Build worksheet data matching the NIMC template exactly
+    // Row layout matching the NIMC template exactly:
+    // Row 1: Title (merged A1:G1)
+    // Row 2: empty
+    // Row 3: "Name of FEP:" (A3), merged value "2 PLUS TECHNOLOGIES" (B3:D3), "Date of Reporting:" (E3), merged value date (F3:G3)
+    // Row 4: empty
+    // Row 5: Column headers
+    // Row 6+: Data
+
     const wsData: (string | number)[][] = [
-      ['Daily Ward Enrollment Reporting Template'],
-      [],
-      ['Name of FEP:', '2 PLUS TECHNOLOGIES', '', '', 'Date of Reporting:', reportDate],
-      [],
+      ['Daily Ward Enrollment Report', '', '', '', '', '', ''],
+      ['', '', '', '', '', '', ''],
+      ['Name of FEP:', '2 PLUS TECHNOLOGIES', '', '', 'Date of Reporting:', reportDateFormatted, ''],
+      ['', '', '', '', '', '', ''],
       ['S/No.', 'States', 'Local Govt Areas', 'Ward', 'Device ID', 'Daily Enrolment Figures', 'Issues/Complaint'],
     ];
 
@@ -104,6 +115,13 @@ export default function AdminPage({ user: _user }: Props) {
 
     const ws = XLSX.utils.aoa_to_sheet(wsData);
 
+    // Merges
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },  // Title: A1:G1
+      { s: { r: 2, c: 1 }, e: { r: 2, c: 3 } },  // FEP value: B3:D3
+      { s: { r: 2, c: 5 }, e: { r: 2, c: 6 } },  // Date value: F3:G3
+    ];
+
     // Column widths
     ws['!cols'] = [
       { wch: 6 },   // S/No.
@@ -115,10 +133,30 @@ export default function AdminPage({ user: _user }: Props) {
       { wch: 40 },  // Issues
     ];
 
-    // Merge title row across all columns
-    ws['!merges'] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }, // Title row
-    ];
+    // Cell styles
+    const titleCell = ws['A1'];
+    if (titleCell) {
+      titleCell.s = {
+        font: { bold: true, sz: 14 },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        fill: { fgColor: { rgb: '1F7A6E' } },
+      };
+    }
+
+    // Style header row (row 5, index 4)
+    ['A5', 'B5', 'C5', 'D5', 'E5', 'F5', 'G5'].forEach(cell => {
+      if (ws[cell]) {
+        ws[cell].s = {
+          font: { bold: true },
+          fill: { fgColor: { rgb: 'D9EAD3' } },
+          alignment: { horizontal: 'center', wrapText: true },
+          border: {
+            top: { style: 'thin' }, bottom: { style: 'thin' },
+            left: { style: 'thin' }, right: { style: 'thin' },
+          },
+        };
+      }
+    });
 
     XLSX.utils.book_append_sheet(wb, ws, 'FEP WARD ENROLMENT TEMPLATE');
     XLSX.writeFile(wb, fileName);

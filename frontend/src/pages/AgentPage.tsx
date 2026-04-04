@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
-import { collection, addDoc, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { collection, addDoc, query, where, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { GEO_DATA } from '../geoData';
@@ -26,6 +26,13 @@ export default function AgentPage({ user }: Props) {
   const [lgaId, setLgaId] = useState('');
   const [wardId, setWardId] = useState('');
   const [deviceId, setDeviceId] = useState('');
+
+  useEffect(() => {
+    // Auto-fill device ID from user profile
+    getDoc(doc(db, 'users', user.uid)).then(snap => {
+      if (snap.exists() && snap.data().deviceId) setDeviceId(snap.data().deviceId);
+    });
+  }, [user.uid]);
   const [dailyFigures, setDailyFigures] = useState('');
   const [issues, setIssues] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);

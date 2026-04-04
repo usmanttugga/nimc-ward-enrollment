@@ -9,6 +9,7 @@ export default function AuthPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [deviceId, setDeviceId] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -21,7 +22,7 @@ export default function AuthPage() {
         const cred = await createUserWithEmailAndPassword(auth, email, password);
         await updateProfile(cred.user, { displayName: name });
         await setDoc(doc(db, 'users', cred.user.uid), {
-          name, email, role: 'AGENT', createdAt: new Date().toISOString(),
+          name, email, role: 'AGENT', deviceId, createdAt: new Date().toISOString(),
         });
       } else {
         await signInWithEmailAndPassword(auth, email, password);
@@ -66,12 +67,20 @@ export default function AuthPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {mode === 'register' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-              <input type="text" required value={name} onChange={e => setName(e.target.value)}
-                placeholder="Enter your full name"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
-            </div>
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                <input type="text" required value={name} onChange={e => setName(e.target.value)}
+                  placeholder="Enter your full name"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Device ID</label>
+                <input type="text" required value={deviceId} onChange={e => setDeviceId(e.target.value)}
+                  placeholder="e.g. NIN-DEV-00123"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+              </div>
+            </>
           )}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>

@@ -28,7 +28,7 @@ interface Agent {
   createdAt: string;
 }
 
-export default function AdminPage({ user }: Props) {
+export default function AdminPage({ user: _user }: Props) {
   const [tab, setTab] = useState<'enrollments' | 'agents'>('enrollments');
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);

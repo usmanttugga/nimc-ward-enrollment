@@ -36,6 +36,8 @@ export default function AdminPage({ user: _user }: Props) {
   const [editDeviceId, setEditDeviceId] = useState('');
   const [editSaving, setEditSaving] = useState(false);
   const [resetMsg, setResetMsg] = useState<Record<string, string>>({});
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState('');
 
   function loadAgents() {
     const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
@@ -69,6 +71,20 @@ export default function AdminPage({ user: _user }: Props) {
   const totalFigures = filtered.reduce((sum, r) => sum + (r.dailyFigures || 0), 0);
 
   function clearFilters() { setSearch(''); setDateFrom(''); setDateTo(''); }
+
+  async function handleDeleteEnrollment(record: Enrollment): Promise<void> {
+    if (!window.confirm(`Delete enrollment record for "${record.agentName}" on ${record.date}?`)) return;
+    setDeleteError('');
+    setDeletingId(record.id);
+    try {
+      await deleteDoc(doc(db, 'enrollments', record.id));
+      setEnrollments(prev => prev.filter(r => r.id !== record.id));
+    } catch (err: any) {
+      setDeleteError('Failed to delete record: ' + err.message);
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   async function handleAddUser(e: React.FormEvent) {
     e.preventDefault();
@@ -282,8 +298,13 @@ export default function AdminPage({ user: _user }: Props) {
               </div>
             </div>
 
-            {loading ? (
-              <div className="flex items-center justify-center py-16 text-gray-400">
+            {deleteError && (
+              <div className="mx-5 mt-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">
+                {deleteError}
+              </div>
+            )}
+
+            {loading ? (              <div className="flex items-center justify-center py-16 text-gray-400">
                 <svg className="animate-spin h-6 w-6 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
@@ -300,7 +321,7 @@ export default function AdminPage({ user: _user }: Props) {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-100">
-                      {['Date', 'Agent', 'Location', 'Device ID', 'Enrollees', 'Issues'].map((h, i) => (
+                      {['Date', 'Agent', 'Location', 'Device ID', 'Enrollees', 'Issues', 'Actions'].map((h, i) => (
                         <th key={h} className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider ${i === 4 ? 'text-right' : 'text-left'}`}>{h}</th>
                       ))}
                     </tr>
@@ -329,6 +350,23 @@ export default function AdminPage({ user: _user }: Props) {
                           {r.issuesComplaints
                             ? <span className="text-orange-600 text-xs bg-orange-50 px-2 py-1 rounded-full">{r.issuesComplaints.length > 40 ? r.issuesComplaints.slice(0, 40) + '…' : r.issuesComplaints}</span>
                             : <span className="text-gray-300 text-xs">—</span>}
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <button
+                            onClick={() => handleDeleteEnrollment(r)}
+                            disabled={deletingId === r.id}
+                            className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 bg-red-50 hover:bg-red-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1"
+                          >
+                            {deletingId === r.id ? (
+                              <>
+                                <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                </svg>
+                                Deleting…
+                              </>
+                            ) : 'Delete'}
+                          </button>
                         </td>
                       </tr>
                     ))}

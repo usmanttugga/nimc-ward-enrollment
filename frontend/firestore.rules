@@ -2,23 +2,26 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users can read/write their own profile
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-      allow read: if request.auth != null &&
+    function isAdmin() {
+      return request.auth != null &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN';
     }
 
-    // Enrollments: agents create and read their own, admins read all
+    match /users/{userId} {
+      // Users can read/write their own profile
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      // Admins can read and write any user document
+      allow read, write: if isAdmin();
+    }
+
     match /enrollments/{docId} {
+      // Agents can create their own enrollments
       allow create: if request.auth != null &&
         request.resource.data.agentId == request.auth.uid;
-      allow read: if request.auth != null && (
-        resource.data.agentId == request.auth.uid ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN'
-      );
-      // Allow listing (queries) for own submissions
-      allow list: if request.auth != null;
+      // Anyone authenticated can read (agent sees own, admin sees all via client filter)
+      allow read, list: if request.auth != null;
+      // Only admins can delete enrollment records
+      allow delete: if isAdmin();
     }
   }
 }

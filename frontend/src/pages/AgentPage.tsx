@@ -3,7 +3,7 @@ import { User } from 'firebase/auth';
 import { collection, addDoc, query, where, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '../firebase';
-import { GEO_DATA } from '../geoData';
+import { loadGeoData, State } from '../geoData';
 import Logo from '../components/Logo';
 
 interface Props { user: User; }
@@ -22,13 +22,15 @@ interface Record {
 
 export default function AgentPage({ user }: Props) {
   const [tab, setTab] = useState<'form' | 'history'>('form');
+  const [geoData, setGeoData] = useState<State[]>([]);
   const [stateId, setStateId] = useState('');
   const [lgaId, setLgaId] = useState('');
   const [wardId, setWardId] = useState('');
   const [deviceId, setDeviceId] = useState('');
 
+  useEffect(() => { loadGeoData().then(setGeoData); }, []);
+
   useEffect(() => {
-    // Auto-fill device ID from user profile
     getDoc(doc(db, 'users', user.uid)).then(snap => {
       if (snap.exists() && snap.data().deviceId) setDeviceId(snap.data().deviceId);
     });
@@ -42,7 +44,7 @@ export default function AgentPage({ user }: Props) {
   const [history, setHistory] = useState<Record[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  const selectedState = GEO_DATA.find(s => s.id === stateId);
+  const selectedState = geoData.find(s => s.id === stateId);
   const selectedLga = selectedState?.lgas.find(l => l.id === lgaId);
   const wards = selectedLga?.wards ?? [];
 
@@ -138,7 +140,7 @@ export default function AgentPage({ user }: Props) {
                 <select required value={stateId} onChange={e => { setStateId(e.target.value); setLgaId(''); setWardId(''); }}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
                   <option value="">-- Select State --</option>
-                  {GEO_DATA.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  {geoData.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
               <div>

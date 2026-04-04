@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
 import { signOut } from 'firebase/auth';
 import { collection, query, orderBy, getDocs } from 'firebase/firestore';
+import * as XLSX from 'xlsx';
 import { auth, db } from '../firebase';
 import Logo from '../components/Logo';
 
@@ -75,18 +76,52 @@ export default function AdminPage({ user: _user }: Props) {
   }
 
   function exportCsv() {
-    const headers = ['Date', 'Agent', 'Email', 'State', 'LGA', 'Ward', 'Device ID', 'Daily Figures', 'Issues/Complaints', 'Submitted At'];
-    const rows = filtered.map(r => [
-      r.date, r.agentName, r.agentEmail, r.stateName, r.lgaName, r.wardName,
-      r.deviceId, r.dailyFigures, r.issuesComplaints || '', r.submittedAt
-    ]);
-    const csv = [headers, ...rows].map(row => row.map(v => `"${v}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `enrollments-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    const reportDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const fileName = `2PLUS TECH WARD ENROLLMENT ${reportDate.replace(/\//g, '-')}.xlsx`;
+
+    const wb = XLSX.utils.book_new();
+
+    // Build worksheet data matching the NIMC template exactly
+    const wsData: (string | number)[][] = [
+      ['Daily Ward Enrollment Reporting Template'],
+      [],
+      ['Name of FEP:', '2 PLUS TECHNOLOGIES', '', '', 'Date of Reporting:', reportDate],
+      [],
+      ['S/No.', 'States', 'Local Govt Areas', 'Ward', 'Device ID', 'Daily Enrolment Figures', 'Issues/Complaint'],
+    ];
+
+    filtered.forEach((r, i) => {
+      wsData.push([
+        i + 1,
+        r.stateName,
+        r.lgaName,
+        r.wardName,
+        r.deviceId,
+        r.dailyFigures,
+        r.issuesComplaints || '',
+      ]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    // Column widths
+    ws['!cols'] = [
+      { wch: 6 },   // S/No.
+      { wch: 20 },  // States
+      { wch: 25 },  // LGA
+      { wch: 25 },  // Ward
+      { wch: 18 },  // Device ID
+      { wch: 22 },  // Daily Figures
+      { wch: 40 },  // Issues
+    ];
+
+    // Merge title row across all columns
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }, // Title row
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, 'FEP WARD ENROLMENT TEMPLATE');
+    XLSX.writeFile(wb, fileName);
   }
 
   return (
@@ -136,7 +171,7 @@ export default function AdminPage({ user: _user }: Props) {
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                   </svg>
-                  Export CSV
+                  Export Excel
                 </button>
               </div>
 

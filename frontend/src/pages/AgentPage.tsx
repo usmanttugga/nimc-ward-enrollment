@@ -73,9 +73,9 @@ export default function AgentPage({ user }: Props) {
     if (!stateId || !lgaId || !wardId) { setError('Please select State, LGA, and Ward.'); return; }
     setSubmitting(true);
     try {
-      const state = GEO_DATA.find(s => s.id === stateId)!;
-      const lga = state.lgas.find(l => l.id === lgaId)!;
-      const ward = lga.wards.find(w => w.id === wardId)!;
+      const state = geoData.find((s: State) => s.id === stateId)!;
+      const lga = state.lgas.find((l: { id: string; name: string }) => l.id === lgaId)!;
+      const ward = lga.wards.find((w: { id: string; name: string }) => w.id === wardId)!;
       await addDoc(collection(db, 'enrollments'), {
         date,
         stateId, stateName: state.name,

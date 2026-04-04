@@ -22,6 +22,8 @@ service cloud.firestore {
       allow read, list: if request.auth != null;
       // Only admins can delete enrollment records
       allow delete: if isAdmin();
+      // Only admins can update enrollment records
+      allow update: if isAdmin();
     }
   }
 }

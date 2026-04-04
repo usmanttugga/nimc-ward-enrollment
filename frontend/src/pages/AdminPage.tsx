@@ -38,6 +38,11 @@ export default function AdminPage({ user: _user }: Props) {
   const [resetMsg, setResetMsg] = useState<Record<string, string>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState('');
+  const [editEnrollment, setEditEnrollment] = useState<Enrollment | null>(null);
+  const [editDate, setEditDate] = useState('');
+  const [editDailyFigures, setEditDailyFigures] = useState('');
+  const [editIssues, setEditIssues] = useState('');
+  const [editEnrollmentSaving, setEditEnrollmentSaving] = useState(false);
 
   function loadAgents() {
     const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
@@ -83,6 +88,33 @@ export default function AdminPage({ user: _user }: Props) {
       setDeleteError('Failed to delete record: ' + err.message);
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  function openEditEnrollment(record: Enrollment) {
+    setEditEnrollment(record);
+    setEditDate(record.date);
+    setEditDailyFigures(String(record.dailyFigures));
+    setEditIssues(record.issuesComplaints || '');
+  }
+
+  async function handleEditEnrollmentSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editEnrollment) return;
+    setEditEnrollmentSaving(true);
+    try {
+      const updates = {
+        date: editDate,
+        dailyFigures: Number(editDailyFigures),
+        issuesComplaints: editIssues,
+      };
+      await updateDoc(doc(db, 'enrollments', editEnrollment.id), updates);
+      setEnrollments(prev => prev.map(r => r.id === editEnrollment.id ? { ...r, ...updates } : r));
+      setEditEnrollment(null);
+    } catch (err: any) {
+      alert('Failed to update record: ' + err.message);
+    } finally {
+      setEditEnrollmentSaving(false);
     }
   }
 
@@ -188,7 +220,7 @@ export default function AdminPage({ user: _user }: Props) {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* Edit Modal */}
+      {/* Edit Agent Modal */}
       {editAgent && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
@@ -217,6 +249,43 @@ export default function AdminPage({ user: _user }: Props) {
                   {editSaving ? 'Saving...' : 'Save Changes'}
                 </button>
                 <button type="button" onClick={() => setEditAgent(null)}
+                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 rounded-lg transition-colors text-sm">
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Edit Enrollment Modal */}
+      {editEnrollment && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-bold text-gray-800 mb-4">Edit Enrollment Record</h3>
+            <p className="text-sm text-gray-500 mb-4">Agent: <span className="font-medium text-gray-700">{editEnrollment.agentName}</span></p>
+            <form onSubmit={handleEditEnrollmentSave} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                <input type="date" required value={editDate} onChange={e => setEditDate(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Daily Enrollment Figures</label>
+                <input type="number" required min="0" value={editDailyFigures} onChange={e => setEditDailyFigures(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Issues / Complaints</label>
+                <textarea value={editIssues} onChange={e => setEditIssues(e.target.value)} rows={3}
+                  placeholder="None"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none" />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="submit" disabled={editEnrollmentSaving}
+                  className="flex-1 bg-teal-700 hover:bg-teal-800 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-60 text-sm">
+                  {editEnrollmentSaving ? 'Saving...' : 'Save Changes'}
+                </button>
+                <button type="button" onClick={() => setEditEnrollment(null)}
                   className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 rounded-lg transition-colors text-sm">
                   Cancel
                 </button>
@@ -352,11 +421,18 @@ export default function AdminPage({ user: _user }: Props) {
                             : <span className="text-gray-300 text-xs">—</span>}
                         </td>
                         <td className="px-4 py-3.5">
-                          <button
-                            onClick={() => handleDeleteEnrollment(r)}
-                            disabled={deletingId === r.id}
-                            className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 bg-red-50 hover:bg-red-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1"
-                          >
+                          <div className="flex gap-1.5">
+                            <button
+                              onClick={() => openEditEnrollment(r)}
+                              className="text-xs text-teal-600 hover:text-teal-800 border border-teal-200 hover:border-teal-400 bg-teal-50 hover:bg-teal-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteEnrollment(r)}
+                              disabled={deletingId === r.id}
+                              className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 bg-red-50 hover:bg-red-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1"
+                            >
                             {deletingId === r.id ? (
                               <>
                                 <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -366,7 +442,8 @@ export default function AdminPage({ user: _user }: Props) {
                                 Deleting…
                               </>
                             ) : 'Delete'}
-                          </button>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}

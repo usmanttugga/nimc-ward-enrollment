@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
-import { collection, addDoc, query, where, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, addDoc, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { loadGeoData, State } from '../geoData';
@@ -57,11 +57,15 @@ export default function AgentPage({ user }: Props) {
     try {
       const q = query(
         collection(db, 'enrollments'),
-        where('agentId', '==', user.uid),
-        orderBy('submittedAt', 'desc')
+        where('agentId', '==', user.uid)
       );
       const snap = await getDocs(q);
-      setHistory(snap.docs.map(d => ({ id: d.id, ...d.data() } as Record)));
+      const records = snap.docs.map(d => ({ id: d.id, ...d.data() } as Record));
+      // Sort client-side to avoid needing a composite Firestore index
+      records.sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
+      setHistory(records);
+    } catch (err: any) {
+      console.error('Failed to load history:', err);
     } finally {
       setLoadingHistory(false);
     }

@@ -94,7 +94,7 @@ export default function AgentPage({ user }: Props) {
         submittedAt: new Date().toISOString(),
       });
       setSuccess('Enrollment submitted successfully!');
-      setDeviceId(''); setDailyFigures(''); setIssues('');
+      setDailyFigures(''); setIssues('');
     } catch (err: any) {
       setError(err.message);
     } finally {

@@ -184,8 +184,13 @@ export default function AgentPage({ user }: Props) {
               {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>}
               {success && <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-3 py-2">{success}</div>}
               <button type="submit" disabled={submitting}
-                className="w-full bg-teal-700 hover:bg-teal-800 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-60">
-                {submitting ? 'Submitting...' : 'Submit Enrollment'}
+                className="w-full bg-teal-700 hover:bg-teal-800 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-70 flex items-center justify-center gap-2">
+                {submitting ? (
+                  <>
+                    <Logo size={22} className="animate-spin" />
+                    Submitting...
+                  </>
+                ) : 'Submit Enrollment'}
               </button>
             </form>
           </div>

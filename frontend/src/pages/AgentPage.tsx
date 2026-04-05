@@ -104,6 +104,15 @@ export default function AgentPage({ user }: Props) {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Fullscreen submission loader */}
+      {submitting && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white/60 backdrop-blur-sm">
+          <div className="animate-float flex flex-col items-center gap-4">
+            <Logo size={80} />
+            <p className="text-teal-700 font-semibold text-sm tracking-wide">Submitting enrollment...</p>
+          </div>
+        </div>
+      )}
       <header className="bg-teal-800 text-white px-4 py-3 flex items-center justify-between shadow">
         <div className="flex items-center gap-3">
           <Logo size={38} />
@@ -184,13 +193,8 @@ export default function AgentPage({ user }: Props) {
               {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>}
               {success && <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-3 py-2">{success}</div>}
               <button type="submit" disabled={submitting}
-                className="w-full bg-teal-700 hover:bg-teal-800 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-70 flex items-center justify-center gap-2">
-                {submitting ? (
-                  <>
-                    <Logo size={22} className="animate-spin" />
-                    Submitting...
-                  </>
-                ) : 'Submit Enrollment'}
+                className="w-full bg-teal-700 hover:bg-teal-800 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-60">
+                Submit Enrollment
               </button>
             </form>
           </div>

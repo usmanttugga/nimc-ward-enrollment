@@ -42,6 +42,8 @@ export default function AdminPage({ user: _user }: Props) {
   const [deleteError, setDeleteError] = useState('');
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 50;
+  const [agentPage, setAgentPage] = useState(0);
+  const AGENT_PAGE_SIZE = 20;
   const [editEnrollment, setEditEnrollment] = useState<Enrollment | null>(null);
   const [editDate, setEditDate] = useState('');
   const [editDailyFigures, setEditDailyFigures] = useState('');
@@ -83,6 +85,8 @@ export default function AdminPage({ user: _user }: Props) {
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const agentTotalPages = Math.ceil(agents.length / AGENT_PAGE_SIZE);
+  const paginatedAgents = agents.slice(agentPage * AGENT_PAGE_SIZE, (agentPage + 1) * AGENT_PAGE_SIZE);
 
   async function handleDeleteEnrollment(record: Enrollment): Promise<void> {
     if (!window.confirm(`Delete enrollment record for "${record.agentName}" on ${record.date}?`)) return;
@@ -585,7 +589,7 @@ export default function AdminPage({ user: _user }: Props) {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {agents.map((a, i) => (
+                      {paginatedAgents.map((a, i) => (
                         <tr key={a.id} className={`hover:bg-teal-50 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
                           <td className="px-4 py-3.5">
                             <div className="flex items-center gap-3">
@@ -626,6 +630,42 @@ export default function AdminPage({ user: _user }: Props) {
                       ))}
                     </tbody>
                   </table>
+                </div>
+              )}
+              {agentTotalPages > 1 && (
+                <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-t border-gray-100">
+                  <span className="text-sm text-gray-500">
+                    {agents.length} agents · Page {agentPage + 1} of {agentTotalPages}
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1">
+                    <button onClick={() => setAgentPage(p => p - 1)} disabled={agentPage === 0}
+                      className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                      ←
+                    </button>
+                    {Array.from({ length: agentTotalPages }, (_, i) => {
+                      const showPage = i === 0 || i === agentTotalPages - 1 || Math.abs(i - agentPage) <= 2;
+                      const showEllipsisBefore = i === agentPage - 3 && i > 1;
+                      const showEllipsisAfter = i === agentPage + 3 && i < agentTotalPages - 2;
+                      if (showEllipsisBefore || showEllipsisAfter) {
+                        return <span key={i} className="px-1 text-gray-400 text-sm">…</span>;
+                      }
+                      if (!showPage) return null;
+                      return (
+                        <button key={i} onClick={() => setAgentPage(i)}
+                          className={`min-w-[32px] px-2.5 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                            agentPage === i
+                              ? 'bg-teal-700 text-white border-teal-700'
+                              : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                          }`}>
+                          {i + 1}
+                        </button>
+                      );
+                    })}
+                    <button onClick={() => setAgentPage(p => p + 1)} disabled={agentPage >= agentTotalPages - 1}
+                      className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                      →
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

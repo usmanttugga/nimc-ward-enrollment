@@ -467,18 +467,37 @@ export default function AdminPage({ user: _user }: Props) {
               </div>
             )}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between px-5 py-4 border-t border-gray-100">
+              <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-t border-gray-100">
                 <span className="text-sm text-gray-500">
-                  Page {page + 1} of {totalPages} · {filtered.length} records
+                  {filtered.length} records · Page {page + 1} of {totalPages}
                 </span>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap items-center gap-1">
                   <button onClick={() => setPage(p => p - 1)} disabled={page === 0}
-                    className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                    ← Previous
+                    className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                    ←
                   </button>
+                  {Array.from({ length: totalPages }, (_, i) => {
+                    const showPage = i === 0 || i === totalPages - 1 || Math.abs(i - page) <= 2;
+                    const showEllipsisBefore = i === page - 3 && i > 1;
+                    const showEllipsisAfter = i === page + 3 && i < totalPages - 2;
+                    if (showEllipsisBefore || showEllipsisAfter) {
+                      return <span key={i} className="px-1 text-gray-400 text-sm">…</span>;
+                    }
+                    if (!showPage) return null;
+                    return (
+                      <button key={i} onClick={() => setPage(i)}
+                        className={`min-w-[32px] px-2.5 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                          page === i
+                            ? 'bg-teal-700 text-white border-teal-700'
+                            : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                        }`}>
+                        {i + 1}
+                      </button>
+                    );
+                  })}
                   <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPages - 1}
-                    className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                    Next →
+                    className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                    →
                   </button>
                 </div>
               </div>

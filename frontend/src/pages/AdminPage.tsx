@@ -40,6 +40,8 @@ export default function AdminPage({ user: _user }: Props) {
   const [resetMsg, setResetMsg] = useState<Record<string, string>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState('');
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 50;
   const [editEnrollment, setEditEnrollment] = useState<Enrollment | null>(null);
   const [editDate, setEditDate] = useState('');
   const [editDailyFigures, setEditDailyFigures] = useState('');
@@ -77,7 +79,10 @@ export default function AdminPage({ user: _user }: Props) {
   });
   const totalFigures = filtered.reduce((sum, r) => sum + (r.dailyFigures || 0), 0);
 
-  function clearFilters() { setSearch(''); setDateFrom(''); setDateTo(''); }
+  function clearFilters() { setSearch(''); setDateFrom(''); setDateTo(''); setPage(0); }
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   async function handleDeleteEnrollment(record: Enrollment): Promise<void> {
     if (!window.confirm(`Delete enrollment record for "${record.agentName}" on ${record.date}?`)) return;
@@ -352,17 +357,17 @@ export default function AdminPage({ user: _user }: Props) {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
                   <input type="text" placeholder="Search agent, state, LGA, ward..." value={search}
-                    onChange={e => setSearch(e.target.value)}
+                    onChange={e => { setSearch(e.target.value); setPage(0); }}
                     className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-gray-50" />
                 </div>
                 <div className="flex items-center gap-1">
                   <span className="text-xs font-medium text-gray-500">From</span>
-                  <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                  <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0); }}
                     className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-gray-50" />
                 </div>
                 <div className="flex items-center gap-1">
                   <span className="text-xs font-medium text-gray-500">To</span>
-                  <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                  <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(0); }}
                     className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-gray-50" />
                 </div>
                 {hasFilters && (
@@ -406,7 +411,7 @@ export default function AdminPage({ user: _user }: Props) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {filtered.map((r, i) => (
+                    {paginated.map((r, i) => (
                       <tr key={r.id} className={`hover:bg-teal-50 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
                         <td className="px-4 py-3.5 whitespace-nowrap font-medium text-gray-700">{r.date}</td>
                         <td className="px-4 py-3.5">
@@ -459,6 +464,23 @@ export default function AdminPage({ user: _user }: Props) {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-5 py-4 border-t border-gray-100">
+                <span className="text-sm text-gray-500">
+                  Page {page + 1} of {totalPages} · {filtered.length} records
+                </span>
+                <div className="flex gap-2">
+                  <button onClick={() => setPage(p => p - 1)} disabled={page === 0}
+                    className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                    ← Previous
+                  </button>
+                  <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPages - 1}
+                    className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                    Next →
+                  </button>
+                </div>
               </div>
             )}
           </div>

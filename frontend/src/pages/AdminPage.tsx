@@ -12,7 +12,7 @@ interface Enrollment {
   deviceId: string; dailyFigures: number; issuesComplaints: string;
   agentName: string; agentEmail: string; submittedAt: string;
 }
-interface Agent { id: string; name: string; email: string; deviceId?: string; createdAt: string; }
+interface Agent { id: string; name: string; email: string; deviceId?: string; phone?: string; createdAt: string; }
 
 export default function AdminPage({ user: _user }: Props) {
   const [tab, setTab] = useState<'enrollments' | 'agents'>('enrollments');
@@ -27,6 +27,7 @@ export default function AdminPage({ user: _user }: Props) {
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newDeviceId, setNewDeviceId] = useState('');
+  const [newPhone, setNewPhone] = useState('');
   const [newRole, setNewRole] = useState<'AGENT' | 'ADMIN'>('AGENT');
   const [addingUser, setAddingUser] = useState(false);
   const [addError, setAddError] = useState('');
@@ -34,6 +35,7 @@ export default function AdminPage({ user: _user }: Props) {
   const [editAgent, setEditAgent] = useState<Agent | null>(null);
   const [editName, setEditName] = useState('');
   const [editDeviceId, setEditDeviceId] = useState('');
+  const [editPhone, setEditPhone] = useState('');
   const [editSaving, setEditSaving] = useState(false);
   const [resetMsg, setResetMsg] = useState<Record<string, string>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -129,11 +131,11 @@ export default function AdminPage({ user: _user }: Props) {
       await updateProfile(cred.user, { displayName: newName });
       await setDoc(doc(db, 'users', cred.user.uid), {
         name: newName, email: newEmail, role: newRole,
-        deviceId: newDeviceId, createdAt: new Date().toISOString(),
+        deviceId: newDeviceId, phone: newPhone, createdAt: new Date().toISOString(),
       });
       await secondaryAuth.signOut();
       setAddSuccess(`"${newName}" created as ${newRole}.`);
-      setNewName(''); setNewEmail(''); setNewPassword(''); setNewDeviceId(''); setNewRole('AGENT');
+      setNewName(''); setNewEmail(''); setNewPassword(''); setNewDeviceId(''); setNewPhone(''); setNewRole('AGENT');
       loadAgents();
     } catch (err: any) {
       const msg: Record<string, string> = {
@@ -161,6 +163,7 @@ export default function AdminPage({ user: _user }: Props) {
     setEditAgent(a);
     setEditName(a.name);
     setEditDeviceId(a.deviceId || '');
+    setEditPhone(a.phone || '');
   }
 
   async function handleEditSave(e: React.FormEvent) {
@@ -168,8 +171,8 @@ export default function AdminPage({ user: _user }: Props) {
     if (!editAgent) return;
     setEditSaving(true);
     try {
-      await updateDoc(doc(db, 'users', editAgent.id), { name: editName, deviceId: editDeviceId });
-      setAgents(prev => prev.map(a => a.id === editAgent.id ? { ...a, name: editName, deviceId: editDeviceId } : a));
+      await updateDoc(doc(db, 'users', editAgent.id), { name: editName, deviceId: editDeviceId, phone: editPhone });
+      setAgents(prev => prev.map(a => a.id === editAgent.id ? { ...a, name: editName, deviceId: editDeviceId, phone: editPhone } : a));
       setEditAgent(null);
     } catch (err: any) {
       alert('Failed to update: ' + err.message);
@@ -237,6 +240,13 @@ export default function AdminPage({ user: _user }: Props) {
                   placeholder="HENA-315835789326461" maxLength={22}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono" />
                 <p className="text-xs text-gray-400 mt-1">{editDeviceId.length}/22 characters</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                <input type="tel" value={editPhone}
+                  onChange={e => setEditPhone(e.target.value.replace(/[^0-9+\-\s()]/g, '').slice(0, 15))}
+                  placeholder="+234 800 000 0000"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
@@ -489,6 +499,12 @@ export default function AdminPage({ user: _user }: Props) {
                     <p className="text-xs text-gray-400 mt-1">{newDeviceId.length}/22 characters</p>
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number <span className="text-gray-400">(optional)</span></label>
+                    <input type="tel" value={newPhone}
+                      onChange={e => setNewPhone(e.target.value.replace(/[^0-9+\-\s()]/g, '').slice(0, 15))}
+                      placeholder="+234 800 000 0000" className={inputCls} />
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
                     <select value={newRole} onChange={e => setNewRole(e.target.value as 'AGENT' | 'ADMIN')} className={inputCls}>
                       <option value="AGENT">Agent</option>
@@ -521,6 +537,7 @@ export default function AdminPage({ user: _user }: Props) {
                       <tr className="bg-gray-50 border-b border-gray-100">
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Agent</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Phone</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Device ID</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Registered</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
@@ -538,6 +555,7 @@ export default function AdminPage({ user: _user }: Props) {
                             </div>
                           </td>
                           <td className="px-4 py-3.5 text-gray-500">{a.email}</td>
+                          <td className="px-4 py-3.5 text-gray-500 text-xs">{a.phone || <span className="text-gray-300">—</span>}</td>
                           <td className="px-4 py-3.5">
                             <span className="font-mono text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">{a.deviceId || '—'}</span>
                           </td>

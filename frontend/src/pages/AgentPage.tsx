@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { User } from 'firebase/auth';
-import { collection, addDoc, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, addDoc, query, where, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { loadGeoData, State } from '../geoData';
@@ -21,18 +21,27 @@ interface Record {
 }
 
 export default function AgentPage({ user }: Props) {
-  const [tab, setTab] = useState<'form' | 'history'>('form');
+  const [tab, setTab] = useState<'form' | 'history' | 'profile'>('form');
   const [geoData, setGeoData] = useState<State[]>([]);
   const [stateId, setStateId] = useState('');
   const [lgaId, setLgaId] = useState('');
   const [wardId, setWardId] = useState('');
   const [deviceId, setDeviceId] = useState('');
+  const savedDeviceId = useRef('');
+  const [profilePhone, setProfilePhone] = useState('');
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileSuccess, setProfileSuccess] = useState('');
+  const [profileError, setProfileError] = useState('');
 
   useEffect(() => { loadGeoData().then(setGeoData); }, []);
 
   useEffect(() => {
     getDoc(doc(db, 'users', user.uid)).then(snap => {
-      if (snap.exists() && snap.data().deviceId) setDeviceId(snap.data().deviceId);
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.deviceId) { setDeviceId(data.deviceId); savedDeviceId.current = data.deviceId; }
+        if (data.phone) setProfilePhone(data.phone);
+      }
     });
   }, [user.uid]);
   const [dailyFigures, setDailyFigures] = useState('');
@@ -71,6 +80,20 @@ export default function AgentPage({ user }: Props) {
     }
   }
 
+  async function handleProfileSave(e: React.FormEvent) {
+    e.preventDefault();
+    setProfileError(''); setProfileSuccess('');
+    setProfileSaving(true);
+    try {
+      await updateDoc(doc(db, 'users', user.uid), { phone: profilePhone });
+      setProfileSuccess('Profile updated successfully!');
+    } catch (err: any) {
+      setProfileError('Failed to update: ' + err.message);
+    } finally {
+      setProfileSaving(false);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(''); setSuccess('');
@@ -95,6 +118,7 @@ export default function AgentPage({ user }: Props) {
       });
       setSuccess('Enrollment submitted successfully!');
       setDailyFigures(''); setIssues('');
+      if (savedDeviceId.current) setDeviceId(savedDeviceId.current);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -131,10 +155,10 @@ export default function AgentPage({ user }: Props) {
 
       <div className="max-w-2xl mx-auto p-4">
         <div className="flex gap-2 mb-4">
-          {(['form', 'history'] as const).map(t => (
+          {(['form', 'history', 'profile'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === t ? 'bg-teal-700 text-white' : 'bg-white text-gray-600 border'}`}>
-              {t === 'form' ? 'Submit Enrollment' : 'My Submissions'}
+              {t === 'form' ? 'Submit Enrollment' : t === 'history' ? 'My Submissions' : 'My Profile'}
             </button>
           ))}
         </div>
@@ -176,7 +200,7 @@ export default function AgentPage({ user }: Props) {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Device ID</label>
                 <input type="text" required value={deviceId} onChange={e => setDeviceId(e.target.value)}
                   placeholder="e.g. NIN-DEV-00123"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 font-mono" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Daily Enrollment Figures</label>
@@ -224,6 +248,37 @@ export default function AgentPage({ user }: Props) {
                 ))}
               </div>
             )}
+          </div>
+        )}
+        {tab === 'profile' && (
+          <div className="bg-white rounded-xl shadow p-6">
+            <h2 className="text-lg font-semibold text-gray-800 mb-1">My Profile</h2>
+            <p className="text-sm text-gray-500 mb-5">Update your contact information.</p>
+            <form onSubmit={handleProfileSave} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                <input type="text" value={user.displayName || ''} disabled
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-400" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                <input type="text" value={user.email || ''} disabled
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-400" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                <input type="tel" value={profilePhone}
+                  onChange={e => setProfilePhone(e.target.value.replace(/[^0-9+\-\s()]/g, '').slice(0, 15))}
+                  placeholder="+234 800 000 0000"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+              </div>
+              {profileError && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{profileError}</div>}
+              {profileSuccess && <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-3 py-2">{profileSuccess}</div>}
+              <button type="submit" disabled={profileSaving}
+                className="w-full bg-teal-700 hover:bg-teal-800 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-60 text-sm">
+                {profileSaving ? 'Saving...' : 'Save Profile'}
+              </button>
+            </form>
           </div>
         )}
       </div>

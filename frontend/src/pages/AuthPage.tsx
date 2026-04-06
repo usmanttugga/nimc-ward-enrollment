@@ -149,11 +149,11 @@ export default function AuthPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Device ID</label>
-                    <input type="text" required value={deviceId} onChange={e => setDeviceId(e.target.value.slice(0, 22))}
+                    <input type="text" required value={deviceId} onChange={e => setDeviceId(e.target.value.slice(0, 20))}
                       placeholder="HENA-315835789326461"
-                      maxLength={22}
+                      maxLength={20}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono" />
-                    <p className="text-xs text-gray-400 mt-1">{deviceId.length}/22 characters</p>
+                    <p className="text-xs text-gray-400 mt-1">{deviceId.length}/20 characters</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>

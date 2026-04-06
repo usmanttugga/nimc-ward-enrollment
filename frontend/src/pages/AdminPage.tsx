@@ -236,10 +236,10 @@ export default function AdminPage({ user: _user }: Props) {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Device ID</label>
-                <input type="text" value={editDeviceId} onChange={e => setEditDeviceId(e.target.value.slice(0, 22))}
-                  placeholder="HENA-315835789326461" maxLength={22}
+                <input type="text" value={editDeviceId} onChange={e => setEditDeviceId(e.target.value.slice(0, 20))}
+                  placeholder="HENA-315835789326461" maxLength={20}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono" />
-                <p className="text-xs text-gray-400 mt-1">{editDeviceId.length}/22 characters</p>
+                <p className="text-xs text-gray-400 mt-1">{editDeviceId.length}/20 characters</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
@@ -493,10 +493,10 @@ export default function AdminPage({ user: _user }: Props) {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Device ID <span className="text-gray-400">(optional)</span></label>
-                    <input type="text" value={newDeviceId} onChange={e => setNewDeviceId(e.target.value.slice(0, 22))}
-                      placeholder="HENA-315835789326461" maxLength={22}
+                    <input type="text" value={newDeviceId} onChange={e => setNewDeviceId(e.target.value.slice(0, 20))}
+                      placeholder="HENA-315835789326461" maxLength={20}
                       className={inputCls + ' font-mono'} />
-                    <p className="text-xs text-gray-400 mt-1">{newDeviceId.length}/22 characters</p>
+                    <p className="text-xs text-gray-400 mt-1">{newDeviceId.length}/20 characters</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number <span className="text-gray-400">(optional)</span></label>

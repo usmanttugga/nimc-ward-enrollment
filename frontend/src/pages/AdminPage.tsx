@@ -63,6 +63,8 @@ export default function AdminPage({ user: _user }: Props) {
   const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
   const [loadingLogsForAgent, setLoadingLogsForAgent] = useState<string | null>(null);
   const [deviceIdSearch, setDeviceIdSearch] = useState('');
+  const [enrollmentLogPage, setEnrollmentLogPage] = useState(0);
+  const ENROLLMENT_LOG_PAGE_SIZE = 20;
   // Add Log Form
   const [addLogAgent, setAddLogAgent] = useState<Agent | null>(null);
   const [addLogMonth, setAddLogMonth] = useState('1');
@@ -84,6 +86,8 @@ export default function AdminPage({ user: _user }: Props) {
   const [loadingAccountAgents, setLoadingAccountAgents] = useState(false);
   const [accountAgentsError, setAccountAgentsError] = useState('');
   const [accountDeviceIdSearch, setAccountDeviceIdSearch] = useState('');
+  const [accountPage, setAccountPage] = useState(0);
+  const ACCOUNT_PAGE_SIZE = 20;
   // Edit account details modal
   const [editAccountAgent, setEditAccountAgent] = useState<Agent | null>(null);
   const [editAccountNumber, setEditAccountNumber] = useState('');
@@ -1059,13 +1063,15 @@ export default function AdminPage({ user: _user }: Props) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
                 <input type="text" placeholder="Search by Device ID..." value={deviceIdSearch}
-                  onChange={e => setDeviceIdSearch(e.target.value)}
+                  onChange={e => { setDeviceIdSearch(e.target.value); setEnrollmentLogPage(0); }}
                   className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-gray-50" />
               </div>
             </div>
 
             {(() => {
               const filteredAgents = filterAgentsByDeviceId(agents, deviceIdSearch);
+              const elTotalPages = Math.ceil(filteredAgents.length / ENROLLMENT_LOG_PAGE_SIZE);
+              const paginatedElAgents = filteredAgents.slice(enrollmentLogPage * ENROLLMENT_LOG_PAGE_SIZE, (enrollmentLogPage + 1) * ENROLLMENT_LOG_PAGE_SIZE);
               if (filteredAgents.length === 0) {
                 return (
                   <div className="text-center py-16 text-gray-400">
@@ -1074,8 +1080,9 @@ export default function AdminPage({ user: _user }: Props) {
                 );
               }
               return (
+                <>
                 <div className="divide-y divide-gray-100">
-                  {filteredAgents.map(agent => {
+                  {paginatedElAgents.map(agent => {
                     const isExpanded = expandedAgentId === agent.id;
                     const logs = enrollmentLogsByAgent[agent.id] ?? [];
                     const isLoadingLogs = loadingLogsForAgent === agent.id;
@@ -1164,6 +1171,37 @@ export default function AdminPage({ user: _user }: Props) {
                     );
                   })}
                 </div>
+                {elTotalPages > 1 && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-t border-gray-100">
+                    <span className="text-sm text-gray-500">
+                      {filteredAgents.length} agents · Page {enrollmentLogPage + 1} of {elTotalPages}
+                    </span>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <button onClick={() => setEnrollmentLogPage(p => p - 1)} disabled={enrollmentLogPage === 0}
+                        className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                        ←
+                      </button>
+                      {Array.from({ length: elTotalPages }, (_, i) => {
+                        const showPage = i === 0 || i === elTotalPages - 1 || Math.abs(i - enrollmentLogPage) <= 2;
+                        const showEllipsisBefore = i === enrollmentLogPage - 3 && i > 1;
+                        const showEllipsisAfter = i === enrollmentLogPage + 3 && i < elTotalPages - 2;
+                        if (showEllipsisBefore || showEllipsisAfter) return <span key={i} className="px-1 text-gray-400 text-sm">…</span>;
+                        if (!showPage) return null;
+                        return (
+                          <button key={i} onClick={() => setEnrollmentLogPage(i)}
+                            className={`min-w-[32px] px-2.5 py-1.5 text-sm font-medium rounded-lg border transition-colors ${enrollmentLogPage === i ? 'bg-teal-700 text-white border-teal-700' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                            {i + 1}
+                          </button>
+                        );
+                      })}
+                      <button onClick={() => setEnrollmentLogPage(p => p + 1)} disabled={enrollmentLogPage >= elTotalPages - 1}
+                        className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                        →
+                      </button>
+                    </div>
+                  </div>
+                )}
+                </>
               );
             })()}
           </div>
@@ -1189,7 +1227,7 @@ export default function AdminPage({ user: _user }: Props) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
                 <input type="text" placeholder="Search by Device ID..." value={accountDeviceIdSearch}
-                  onChange={e => setAccountDeviceIdSearch(e.target.value)}
+                  onChange={e => { setAccountDeviceIdSearch(e.target.value); setAccountPage(0); }}
                   className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-gray-50" />
               </div>
             </div>
@@ -1213,56 +1251,96 @@ export default function AdminPage({ user: _user }: Props) {
                 <p className="font-medium">{accountDeviceIdSearch ? 'No agents found' : 'No agents registered yet.'}</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-50 border-b border-gray-100">
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Agent Name</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Device ID</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Account Number</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Account Name</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Bank Name</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {filteredAccountAgents.map((a, i) => (
-                      <tr key={a.id} className={`hover:bg-teal-50 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
-                        <td className="px-4 py-3.5">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-sm flex-shrink-0">
-                              {a.name?.charAt(0).toUpperCase()}
-                            </div>
-                            <span className="font-semibold text-gray-800">{a.name}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <span className="font-mono text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">{a.deviceId || '—'}</span>
-                        </td>
-                        {!a.accountNumber && !a.accountName && !a.bankName ? (
-                          <td colSpan={3} className="px-4 py-3.5">
-                            <span className="inline-flex items-center bg-amber-100 text-amber-700 text-xs font-medium px-2.5 py-1 rounded-full">
-                              Not submitted
-                            </span>
-                          </td>
-                        ) : (
-                          <>
-                            <td className="px-4 py-3.5 font-mono text-sm text-gray-700">{a.accountNumber || <span className="text-gray-300">—</span>}</td>
-                            <td className="px-4 py-3.5 text-gray-700">{a.accountName || <span className="text-gray-300">—</span>}</td>
-                            <td className="px-4 py-3.5 text-gray-700">{a.bankName || <span className="text-gray-300">—</span>}</td>
-                          </>
-                        )}
-                        <td className="px-4 py-3.5">
-                          <button onClick={() => openEditAccount(a)}
-                            className="text-xs text-teal-600 hover:text-teal-800 border border-teal-200 hover:border-teal-400 bg-teal-50 hover:bg-teal-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">
-                            Edit
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <>
+              {(() => {
+                const acTotalPages = Math.ceil(filteredAccountAgents.length / ACCOUNT_PAGE_SIZE);
+                const paginatedAccountAgents = filteredAccountAgents.slice(accountPage * ACCOUNT_PAGE_SIZE, (accountPage + 1) * ACCOUNT_PAGE_SIZE);
+                return (
+                  <>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-gray-50 border-b border-gray-100">
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Agent Name</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Device ID</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Account Number</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Account Name</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Bank Name</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {paginatedAccountAgents.map((a, i) => (
+                          <tr key={a.id} className={`hover:bg-teal-50 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                            <td className="px-4 py-3.5">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-sm flex-shrink-0">
+                                  {a.name?.charAt(0).toUpperCase()}
+                                </div>
+                                <span className="font-semibold text-gray-800">{a.name}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <span className="font-mono text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">{a.deviceId || '—'}</span>
+                            </td>
+                            {!a.accountNumber && !a.accountName && !a.bankName ? (
+                              <td colSpan={3} className="px-4 py-3.5">
+                                <span className="inline-flex items-center bg-amber-100 text-amber-700 text-xs font-medium px-2.5 py-1 rounded-full">
+                                  Not submitted
+                                </span>
+                              </td>
+                            ) : (
+                              <>
+                                <td className="px-4 py-3.5 font-mono text-sm text-gray-700">{a.accountNumber || <span className="text-gray-300">—</span>}</td>
+                                <td className="px-4 py-3.5 text-gray-700">{a.accountName || <span className="text-gray-300">—</span>}</td>
+                                <td className="px-4 py-3.5 text-gray-700">{a.bankName || <span className="text-gray-300">—</span>}</td>
+                              </>
+                            )}
+                            <td className="px-4 py-3.5">
+                              <button onClick={() => openEditAccount(a)}
+                                className="text-xs text-teal-600 hover:text-teal-800 border border-teal-200 hover:border-teal-400 bg-teal-50 hover:bg-teal-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">
+                                Edit
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {acTotalPages > 1 && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-t border-gray-100">
+                      <span className="text-sm text-gray-500">
+                        {filteredAccountAgents.length} agents · Page {accountPage + 1} of {acTotalPages}
+                      </span>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <button onClick={() => setAccountPage(p => p - 1)} disabled={accountPage === 0}
+                          className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                          ←
+                        </button>
+                        {Array.from({ length: acTotalPages }, (_, i) => {
+                          const showPage = i === 0 || i === acTotalPages - 1 || Math.abs(i - accountPage) <= 2;
+                          const showEllipsisBefore = i === accountPage - 3 && i > 1;
+                          const showEllipsisAfter = i === accountPage + 3 && i < acTotalPages - 2;
+                          if (showEllipsisBefore || showEllipsisAfter) return <span key={i} className="px-1 text-gray-400 text-sm">…</span>;
+                          if (!showPage) return null;
+                          return (
+                            <button key={i} onClick={() => setAccountPage(i)}
+                              className={`min-w-[32px] px-2.5 py-1.5 text-sm font-medium rounded-lg border transition-colors ${accountPage === i ? 'bg-teal-700 text-white border-teal-700' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                              {i + 1}
+                            </button>
+                          );
+                        })}
+                        <button onClick={() => setAccountPage(p => p + 1)} disabled={accountPage >= acTotalPages - 1}
+                          className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                          →
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  </>
+                );
+              })()}
+              </>
             )}
           </div>
         )}

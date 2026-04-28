@@ -329,6 +329,19 @@ export default function AdminPage({ user: _user }: Props) {
     }
   }
 
+  async function handleDeleteLog(log: EnrollmentLog) {
+    if (!window.confirm(`Delete the ${formatMonthName(log.month)} ${log.year} log entry for "${log.agentName}"?`)) return;
+    try {
+      await deleteDoc(doc(db, 'enrollmentLogs', log.id));
+      setEnrollmentLogsByAgent(prev => ({
+        ...prev,
+        [log.agentId]: (prev[log.agentId] ?? []).filter(l => l.id !== log.id),
+      }));
+    } catch (err: any) {
+      alert('Failed to delete log entry: ' + err.message);
+    }
+  }
+
   function exportExcel() {
     const reportDateRaw = dateFrom || new Date().toISOString().split('T')[0];
     const [yr, mo, dy] = reportDateRaw.split('-');
@@ -985,10 +998,16 @@ export default function AdminPage({ user: _user }: Props) {
                                           </span>
                                         </td>
                                         <td className="px-4 py-3">
-                                          <button onClick={() => openEditLog(log)}
-                                            className="text-xs text-teal-600 hover:text-teal-800 border border-teal-200 hover:border-teal-400 bg-teal-50 hover:bg-teal-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">
-                                            Edit
-                                          </button>
+                                          <div className="flex gap-1.5">
+                                            <button onClick={() => openEditLog(log)}
+                                              className="text-xs text-teal-600 hover:text-teal-800 border border-teal-200 hover:border-teal-400 bg-teal-50 hover:bg-teal-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">
+                                              Edit
+                                            </button>
+                                            <button onClick={() => handleDeleteLog(log)}
+                                              className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 bg-red-50 hover:bg-red-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">
+                                              Delete
+                                            </button>
+                                          </div>
                                         </td>
                                       </tr>
                                     ))}

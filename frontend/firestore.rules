@@ -35,7 +35,7 @@ service cloud.firestore {
         resource.data.agentId == request.auth.uid
       );
       // Deletes not permitted
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
   }
 }

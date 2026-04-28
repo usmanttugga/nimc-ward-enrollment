@@ -22,7 +22,7 @@ interface Record {
 }
 
 export default function AgentPage({ user }: Props) {
-  const [tab, setTab] = useState<'form' | 'history' | 'profile' | 'enrollmentLog'>('form');
+  const [tab, setTab] = useState<'form' | 'history' | 'profile' | 'enrollmentLog' | 'accountDetails'>('form');
   const [geoData, setGeoData] = useState<State[]>([]);
   const [stateId, setStateId] = useState('');
   const [lgaId, setLgaId] = useState('');
@@ -33,6 +33,18 @@ export default function AgentPage({ user }: Props) {
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSuccess, setProfileSuccess] = useState('');
   const [profileError, setProfileError] = useState('');
+  // Profile — State/LGA
+  const [profileStateId, setProfileStateId] = useState('');
+  const [profileStateName, setProfileStateName] = useState('');
+  const [profileLgaId, setProfileLgaId] = useState('');
+  const [profileLgaName, setProfileLgaName] = useState('');
+  // Account Details tab
+  const [accountNumber, setAccountNumber] = useState('');
+  const [accountName, setAccountName] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [accountSaving, setAccountSaving] = useState(false);
+  const [accountError, setAccountError] = useState('');
+  const [accountSuccess, setAccountSuccess] = useState('');
 
   useEffect(() => { loadGeoData().then(setGeoData); }, []);
 
@@ -42,6 +54,13 @@ export default function AgentPage({ user }: Props) {
         const data = snap.data();
         if (data.deviceId) { setDeviceId(data.deviceId); savedDeviceId.current = data.deviceId; }
         if (data.phone) setProfilePhone(data.phone);
+        if (data.profileStateId) setProfileStateId(data.profileStateId);
+        if (data.profileStateName) setProfileStateName(data.profileStateName);
+        if (data.profileLgaId) setProfileLgaId(data.profileLgaId);
+        if (data.profileLgaName) setProfileLgaName(data.profileLgaName);
+        if (data.accountNumber) setAccountNumber(data.accountNumber);
+        if (data.accountName) setAccountName(data.accountName);
+        if (data.bankName) setBankName(data.bankName);
       }
     });
   }, [user.uid]);
@@ -101,17 +120,44 @@ export default function AgentPage({ user }: Props) {
     }
   }
 
+  const profileSelectedState = geoData.find(s => s.id === profileStateId);
+  const profileLgas = profileSelectedState?.lgas ?? [];
+
   async function handleProfileSave(e: React.FormEvent) {
     e.preventDefault();
     setProfileError(''); setProfileSuccess('');
     setProfileSaving(true);
     try {
-      await updateDoc(doc(db, 'users', user.uid), { phone: profilePhone });
+      await updateDoc(doc(db, 'users', user.uid), {
+        phone: profilePhone,
+        profileStateId,
+        profileStateName,
+        profileLgaId,
+        profileLgaName,
+      });
       setProfileSuccess('Profile updated successfully!');
     } catch (err: any) {
       setProfileError('Failed to update: ' + err.message);
     } finally {
       setProfileSaving(false);
+    }
+  }
+
+  async function handleAccountSave(e: React.FormEvent) {
+    e.preventDefault();
+    setAccountError(''); setAccountSuccess('');
+    if (!accountNumber.trim() || !accountName.trim() || !bankName.trim()) {
+      setAccountError('All three fields are required.');
+      return;
+    }
+    setAccountSaving(true);
+    try {
+      await updateDoc(doc(db, 'users', user.uid), { accountNumber, accountName, bankName });
+      setAccountSuccess('Account details saved successfully!');
+    } catch (err: any) {
+      setAccountError('Failed to save: ' + err.message);
+    } finally {
+      setAccountSaving(false);
     }
   }
 
@@ -176,10 +222,10 @@ export default function AgentPage({ user }: Props) {
 
       <div className="max-w-2xl mx-auto p-4">
         <div className="flex flex-wrap gap-2 mb-4">
-          {(['form', 'history', 'profile', 'enrollmentLog'] as const).map(t => (
+          {(['form', 'history', 'profile', 'enrollmentLog', 'accountDetails'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === t ? 'bg-teal-700 text-white' : 'bg-white text-gray-600 border'}`}>
-              {t === 'form' ? 'Submit Enrollment' : t === 'history' ? 'My Submissions' : t === 'profile' ? 'My Profile' : '📊 Enrollment Log'}
+              {t === 'form' ? 'Submit Enrollment' : t === 'history' ? 'My Submissions' : t === 'profile' ? 'My Profile' : t === 'enrollmentLog' ? '📊 Enrollment Log' : '🏦 Account Details'}
             </button>
           ))}
         </div>
@@ -293,11 +339,96 @@ export default function AgentPage({ user }: Props) {
                   placeholder="+234 800 000 0000"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
+                <select
+                  value={profileStateId}
+                  onChange={e => {
+                    const selected = geoData.find(s => s.id === e.target.value);
+                    setProfileStateId(selected?.id ?? '');
+                    setProfileStateName(selected?.name ?? '');
+                    setProfileLgaId('');
+                    setProfileLgaName('');
+                  }}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500">
+                  <option value="">-- Select State --</option>
+                  {geoData.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Local Government Area</label>
+                <select
+                  value={profileLgaId}
+                  onChange={e => {
+                    const selected = profileLgas.find(l => l.id === e.target.value);
+                    setProfileLgaId(selected?.id ?? '');
+                    setProfileLgaName(selected?.name ?? '');
+                  }}
+                  disabled={!profileStateId}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:bg-gray-100">
+                  <option value="">-- Select LGA --</option>
+                  {profileLgas.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+              </div>
               {profileError && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{profileError}</div>}
               {profileSuccess && <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-3 py-2">{profileSuccess}</div>}
               <button type="submit" disabled={profileSaving}
                 className="w-full bg-teal-700 hover:bg-teal-800 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-60 text-sm">
                 {profileSaving ? 'Saving...' : 'Save Profile'}
+              </button>
+            </form>
+          </div>
+        )}
+
+        {tab === 'accountDetails' && (
+          <div className="bg-white rounded-xl shadow p-6">
+            <h2 className="text-lg font-semibold text-gray-800 mb-4">Account Details</h2>
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg px-4 py-3 mb-5 flex items-start gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              </svg>
+              <span>⚠️ Your bank account name must match the name registered with the company. Please enter your account details carefully.</span>
+            </div>
+            <form onSubmit={handleAccountSave} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Account Number</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={10}
+                  value={accountNumber}
+                  onChange={e => setAccountNumber(e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
+                  placeholder="10-digit account number"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Account Name</label>
+                <input
+                  type="text"
+                  maxLength={100}
+                  value={accountName}
+                  onChange={e => setAccountName(e.target.value)}
+                  placeholder="Name on your bank account"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Bank Name</label>
+                <input
+                  type="text"
+                  maxLength={100}
+                  value={bankName}
+                  onChange={e => setBankName(e.target.value)}
+                  placeholder="e.g. First Bank, GTBank"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+              {accountError && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{accountError}</div>}
+              {accountSuccess && <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-3 py-2">{accountSuccess}</div>}
+              <button type="submit" disabled={accountSaving}
+                className="w-full bg-teal-700 hover:bg-teal-800 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-60 text-sm">
+                {accountSaving ? 'Saving...' : 'Save Account Details'}
               </button>
             </form>
           </div>

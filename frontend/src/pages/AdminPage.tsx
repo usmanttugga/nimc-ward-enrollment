@@ -20,10 +20,10 @@ interface Enrollment {
   deviceId: string; dailyFigures: number; issuesComplaints: string;
   agentName: string; agentEmail: string; submittedAt: string;
 }
-interface Agent { id: string; name: string; email: string; deviceId?: string; phone?: string; createdAt: string; }
+interface Agent { id: string; name: string; email: string; deviceId?: string; phone?: string; createdAt: string; accountNumber?: string; accountName?: string; bankName?: string; }
 
 export default function AdminPage({ user: _user }: Props) {
-  const [tab, setTab] = useState<'enrollments' | 'agents' | 'enrollmentLog'>('enrollments');
+  const [tab, setTab] = useState<'enrollments' | 'agents' | 'enrollmentLog' | 'accountDetails'>('enrollments');
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [search, setSearch] = useState('');
@@ -79,6 +79,12 @@ export default function AdminPage({ user: _user }: Props) {
   const [editLogSaving, setEditLogSaving] = useState(false);
   const [editLogError, setEditLogError] = useState('');
 
+  // --- Account Details tab state ---
+  const [accountAgents, setAccountAgents] = useState<Agent[]>([]);
+  const [loadingAccountAgents, setLoadingAccountAgents] = useState(false);
+  const [accountAgentsError, setAccountAgentsError] = useState('');
+  const [accountDeviceIdSearch, setAccountDeviceIdSearch] = useState('');
+
   function loadAgents() {
     const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
     getDocs(q).then(snap => {
@@ -89,6 +95,20 @@ export default function AdminPage({ user: _user }: Props) {
     });
   }
 
+  async function loadAccountAgents() {
+    setLoadingAccountAgents(true);
+    setAccountAgentsError('');
+    try {
+      const q = query(collection(db, 'users'), where('role', '==', 'AGENT'));
+      const snap = await getDocs(q);
+      setAccountAgents(snap.docs.map(d => ({ id: d.id, ...d.data() } as Agent)));
+    } catch (err: any) {
+      setAccountAgentsError('Failed to load agents: ' + err.message);
+    } finally {
+      setLoadingAccountAgents(false);
+    }
+  }
+
   useEffect(() => {
     setLoading(true);
     if (tab === 'enrollments') {
@@ -97,6 +117,7 @@ export default function AdminPage({ user: _user }: Props) {
         setEnrollments(snap.docs.map(d => ({ id: d.id, ...d.data() } as Enrollment)));
       }).finally(() => setLoading(false));
     } else {
+      if (tab === 'accountDetails' && accountAgents.length === 0) loadAccountAgents();
       if (agents.length === 0) loadAgents();
       setLoading(false);
     }
@@ -342,6 +363,28 @@ export default function AdminPage({ user: _user }: Props) {
     }
   }
 
+  const filteredAccountAgents = filterAgentsByDeviceId(accountAgents, accountDeviceIdSearch);
+
+  function exportAccountDetailsExcel() {
+    const today = new Date().toISOString().split('T')[0];
+    const fileName = `account-details-${today}.xlsx`;
+    const wb = XLSX.utils.book_new();
+    const wsData: string[][] = [
+      ['Agent Name', 'Device ID', 'Account Number', 'Account Name', 'Bank Name'],
+      ...filteredAccountAgents.map(a => [
+        a.name,
+        a.deviceId || '',
+        a.accountNumber || '',
+        a.accountName || '',
+        a.bankName || '',
+      ]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols'] = [{ wch: 30 }, { wch: 22 }, { wch: 15 }, { wch: 30 }, { wch: 25 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'Account Details');
+    XLSX.writeFile(wb, fileName);
+  }
+
   function exportExcel() {
     const reportDateRaw = dateFrom || new Date().toISOString().split('T')[0];
     const [yr, mo, dy] = reportDateRaw.split('-');
@@ -562,10 +605,10 @@ export default function AdminPage({ user: _user }: Props) {
 
       <div className="max-w-7xl mx-auto p-4">
         <div className="flex flex-wrap gap-2 mb-5">
-          {(['enrollments', 'agents', 'enrollmentLog'] as const).map(t => (
+          {(['enrollments', 'agents', 'enrollmentLog', 'accountDetails'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-5 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm ${tab === t ? 'bg-teal-700 text-white' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
-              {t === 'enrollments' ? '📋 Enrollment Records' : t === 'agents' ? '👥 Agents' : '📊 Enrollment Log'}
+              {t === 'enrollments' ? '📋 Enrollment Records' : t === 'agents' ? '👥 Agents' : t === 'enrollmentLog' ? '📊 Enrollment Log' : '🏦 Account Details'}
             </button>
           ))}
         </div>
@@ -1023,6 +1066,97 @@ export default function AdminPage({ user: _user }: Props) {
                 </div>
               );
             })()}
+          </div>
+        )}
+        {tab === 'accountDetails' && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200">
+            <div className="p-5 border-b border-gray-100">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-800">Account Details</h2>
+                  <p className="text-sm text-gray-500 mt-0.5">Bank account information submitted by agents</p>
+                </div>
+                <button onClick={exportAccountDetailsExcel}
+                  className="flex items-center gap-2 bg-teal-700 hover:bg-teal-800 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors shadow-sm">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Export Excel
+                </button>
+              </div>
+              <div className="relative">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input type="text" placeholder="Search by Device ID..." value={accountDeviceIdSearch}
+                  onChange={e => setAccountDeviceIdSearch(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-gray-50" />
+              </div>
+            </div>
+
+            {accountAgentsError && (
+              <div className="mx-5 mt-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">
+                {accountAgentsError}
+              </div>
+            )}
+
+            {loadingAccountAgents ? (
+              <div className="flex items-center justify-center py-16 text-gray-400">
+                <svg className="animate-spin h-6 w-6 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                Loading agents...
+              </div>
+            ) : filteredAccountAgents.length === 0 ? (
+              <div className="text-center py-16 text-gray-400">
+                <p className="font-medium">{accountDeviceIdSearch ? 'No agents found' : 'No agents registered yet.'}</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-100">
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Agent Name</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Device ID</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Account Number</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Account Name</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Bank Name</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {filteredAccountAgents.map((a, i) => (
+                      <tr key={a.id} className={`hover:bg-teal-50 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                        <td className="px-4 py-3.5">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-sm flex-shrink-0">
+                              {a.name?.charAt(0).toUpperCase()}
+                            </div>
+                            <span className="font-semibold text-gray-800">{a.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className="font-mono text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">{a.deviceId || '—'}</span>
+                        </td>
+                        {!a.accountNumber && !a.accountName && !a.bankName ? (
+                          <td colSpan={3} className="px-4 py-3.5">
+                            <span className="inline-flex items-center bg-amber-100 text-amber-700 text-xs font-medium px-2.5 py-1 rounded-full">
+                              Not submitted
+                            </span>
+                          </td>
+                        ) : (
+                          <>
+                            <td className="px-4 py-3.5 font-mono text-sm text-gray-700">{a.accountNumber || <span className="text-gray-300">—</span>}</td>
+                            <td className="px-4 py-3.5 text-gray-700">{a.accountName || <span className="text-gray-300">—</span>}</td>
+                            <td className="px-4 py-3.5 text-gray-700">{a.bankName || <span className="text-gray-300">—</span>}</td>
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </div>

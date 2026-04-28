@@ -419,6 +419,12 @@ export default function AgentPage({ user }: Props) {
               </div>
             ) : (
               <form onSubmit={handleAccountSave} className="space-y-4">
+                <div className="bg-red-50 border border-red-200 text-red-800 text-sm rounded-lg px-4 py-3 flex items-start gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                  <span><strong>Important:</strong> Once you submit your account details, they will be locked and cannot be changed. If you need to make any corrections after submission, you must contact the admin.</span>
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Account Number</label>
                   <input

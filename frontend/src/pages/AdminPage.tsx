@@ -384,6 +384,25 @@ export default function AdminPage({ user: _user }: Props) {
     setEditAccountError('');
   }
 
+  async function handleDeleteAccountDetails(agent: Agent) {
+    if (!window.confirm(`Delete account details for "${agent.name}"? The agent will be able to submit new account details.`)) return;
+    try {
+      await updateDoc(doc(db, 'users', agent.id), {
+        accountNumber: '',
+        accountName: '',
+        bankName: '',
+        accountLocked: false,
+      });
+      setAccountAgents(prev => prev.map(a =>
+        a.id === agent.id
+          ? { ...a, accountNumber: '', accountName: '', bankName: '', accountLocked: false }
+          : a
+      ));
+    } catch (err: any) {
+      alert('Failed to delete account details: ' + err.message);
+    }
+  }
+
   async function handleEditAccountSave(e: React.FormEvent) {
     e.preventDefault();
     if (!editAccountAgent) return;
@@ -1301,6 +1320,12 @@ export default function AdminPage({ user: _user }: Props) {
                                 className="text-xs text-teal-600 hover:text-teal-800 border border-teal-200 hover:border-teal-400 bg-teal-50 hover:bg-teal-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">
                                 Edit
                               </button>
+                              {(a.accountNumber || a.accountName || a.bankName) && (
+                                <button onClick={() => handleDeleteAccountDetails(a)}
+                                  className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 bg-red-50 hover:bg-red-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium ml-1.5">
+                                  Delete
+                                </button>
+                              )}
                             </td>
                           </tr>
                         ))}

@@ -25,5 +25,17 @@ service cloud.firestore {
       // Only admins can update enrollment records
       allow update: if isAdmin();
     }
+
+    match /enrollmentLogs/{docId} {
+      // Only admins can create or update enrollment log entries
+      allow create, update: if isAdmin();
+      // Agents can read only their own entries; admins can read all
+      allow read, list: if request.auth != null && (
+        isAdmin() ||
+        resource.data.agentId == request.auth.uid
+      );
+      // Deletes not permitted
+      allow delete: if false;
+    }
   }
 }

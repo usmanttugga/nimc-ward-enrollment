@@ -1,10 +1,18 @@
 import { useState, useEffect } from 'react';
 import { User, signOut, createUserWithEmailAndPassword, updateProfile, getAuth, sendPasswordResetEmail } from 'firebase/auth';
-import { collection, query, orderBy, getDocs, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, doc, setDoc, deleteDoc, updateDoc, addDoc, where } from 'firebase/firestore';
 import { initializeApp } from 'firebase/app';
 import * as XLSX from 'xlsx';
 import { auth, db } from '../firebase';
 import Logo from '../components/Logo';
+import {
+  filterAgentsByDeviceId,
+  buildEnrollmentLogDocument,
+  buildEnrollmentLogPatch,
+  formatMonthName,
+  sortEnrollmentLogs,
+  EnrollmentLog,
+} from '../enrollmentLogUtils';
 
 interface Props { user: User; }
 interface Enrollment {
@@ -15,7 +23,7 @@ interface Enrollment {
 interface Agent { id: string; name: string; email: string; deviceId?: string; phone?: string; createdAt: string; }
 
 export default function AdminPage({ user: _user }: Props) {
-  const [tab, setTab] = useState<'enrollments' | 'agents'>('enrollments');
+  const [tab, setTab] = useState<'enrollments' | 'agents' | 'enrollmentLog'>('enrollments');
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [search, setSearch] = useState('');
@@ -50,6 +58,27 @@ export default function AdminPage({ user: _user }: Props) {
   const [editIssues, setEditIssues] = useState('');
   const [editEnrollmentSaving, setEditEnrollmentSaving] = useState(false);
 
+  // --- Enrollment Log state ---
+  const [enrollmentLogsByAgent, setEnrollmentLogsByAgent] = useState<Record<string, EnrollmentLog[]>>({});
+  const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
+  const [loadingLogsForAgent, setLoadingLogsForAgent] = useState<string | null>(null);
+  const [deviceIdSearch, setDeviceIdSearch] = useState('');
+  // Add Log Form
+  const [addLogAgent, setAddLogAgent] = useState<Agent | null>(null);
+  const [addLogMonth, setAddLogMonth] = useState('1');
+  const [addLogYear, setAddLogYear] = useState(String(new Date().getFullYear()));
+  const [addLogTotal, setAddLogTotal] = useState('');
+  const [addLogSaving, setAddLogSaving] = useState(false);
+  const [addLogError, setAddLogError] = useState('');
+  const [addLogSuccess, setAddLogSuccess] = useState('');
+  // Edit Log Form
+  const [editLog, setEditLog] = useState<EnrollmentLog | null>(null);
+  const [editLogMonth, setEditLogMonth] = useState('1');
+  const [editLogYear, setEditLogYear] = useState('');
+  const [editLogTotal, setEditLogTotal] = useState('');
+  const [editLogSaving, setEditLogSaving] = useState(false);
+  const [editLogError, setEditLogError] = useState('');
+
   function loadAgents() {
     const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
     getDocs(q).then(snap => {
@@ -68,7 +97,7 @@ export default function AdminPage({ user: _user }: Props) {
         setEnrollments(snap.docs.map(d => ({ id: d.id, ...d.data() } as Enrollment)));
       }).finally(() => setLoading(false));
     } else {
-      loadAgents();
+      if (agents.length === 0) loadAgents();
       setLoading(false);
     }
   }, [tab]);
@@ -200,6 +229,106 @@ export default function AdminPage({ user: _user }: Props) {
     }
   }
 
+  // --- Enrollment Log functions ---
+  async function loadEnrollmentLogs(agentId: string) {
+    setLoadingLogsForAgent(agentId);
+    try {
+      const q = query(collection(db, 'enrollmentLogs'), where('agentId', '==', agentId));
+      const snap = await getDocs(q);
+      const logs = snap.docs.map(d => ({ id: d.id, ...d.data() } as EnrollmentLog));
+      setEnrollmentLogsByAgent(prev => ({ ...prev, [agentId]: sortEnrollmentLogs(logs) }));
+    } catch (err: any) {
+      console.error('Failed to load enrollment logs:', err);
+      setEnrollmentLogsByAgent(prev => ({ ...prev, [agentId]: [] }));
+    } finally {
+      setLoadingLogsForAgent(null);
+    }
+  }
+
+  function toggleAgentExpand(agentId: string) {
+    if (expandedAgentId === agentId) {
+      setExpandedAgentId(null);
+    } else {
+      setExpandedAgentId(agentId);
+      if (!enrollmentLogsByAgent[agentId]) {
+        loadEnrollmentLogs(agentId);
+      }
+    }
+  }
+
+  function openAddLog(agent: Agent) {
+    setAddLogAgent(agent);
+    setAddLogMonth('1');
+    setAddLogYear(String(new Date().getFullYear()));
+    setAddLogTotal('');
+    setAddLogError('');
+    setAddLogSuccess('');
+  }
+
+  async function handleAddLogSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!addLogAgent) return;
+    setAddLogSaving(true);
+    setAddLogError('');
+    try {
+      const payload = buildEnrollmentLogDocument({
+        agentId: addLogAgent.id,
+        agentName: addLogAgent.name,
+        month: Number(addLogMonth),
+        year: Number(addLogYear),
+        totalEnrollment: Number(addLogTotal),
+        adminUid: _user.uid,
+      });
+      const ref = await addDoc(collection(db, 'enrollmentLogs'), payload);
+      const newEntry: EnrollmentLog = { id: ref.id, ...payload };
+      setEnrollmentLogsByAgent(prev => ({
+        ...prev,
+        [addLogAgent.id]: sortEnrollmentLogs([...(prev[addLogAgent.id] ?? []), newEntry]),
+      }));
+      setAddLogSuccess('Enrollment log added successfully.');
+      setTimeout(() => { setAddLogAgent(null); setAddLogSuccess(''); }, 1200);
+    } catch (err: any) {
+      setAddLogError('Failed to save: ' + err.message);
+    } finally {
+      setAddLogSaving(false);
+    }
+  }
+
+  function openEditLog(log: EnrollmentLog) {
+    setEditLog(log);
+    setEditLogMonth(String(log.month));
+    setEditLogYear(String(log.year));
+    setEditLogTotal(String(log.totalEnrollment));
+    setEditLogError('');
+  }
+
+  async function handleEditLogSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editLog) return;
+    setEditLogSaving(true);
+    setEditLogError('');
+    try {
+      const patch = buildEnrollmentLogPatch({
+        month: Number(editLogMonth),
+        year: Number(editLogYear),
+        totalEnrollment: Number(editLogTotal),
+      });
+      await updateDoc(doc(db, 'enrollmentLogs', editLog.id), patch as unknown as Record<string, unknown>);
+      const updated: EnrollmentLog = { ...editLog, ...patch };
+      setEnrollmentLogsByAgent(prev => ({
+        ...prev,
+        [editLog.agentId]: sortEnrollmentLogs(
+          (prev[editLog.agentId] ?? []).map(l => l.id === editLog.id ? updated : l)
+        ),
+      }));
+      setEditLog(null);
+    } catch (err: any) {
+      setEditLogError('Failed to update: ' + err.message);
+    } finally {
+      setEditLogSaving(false);
+    }
+  }
+
   function exportExcel() {
     const reportDateRaw = dateFrom || new Date().toISOString().split('T')[0];
     const [yr, mo, dy] = reportDateRaw.split('-');
@@ -232,6 +361,98 @@ export default function AdminPage({ user: _user }: Props) {
 
   return (
     <div className="min-h-screen bg-gray-100">
+      {/* Add Enrollment Log Modal */}
+      {addLogAgent && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-bold text-gray-800 mb-1">Add Enrollment Log</h3>
+            <p className="text-sm text-gray-500 mb-4">Agent: <span className="font-medium text-gray-700">{addLogAgent.name}</span></p>
+            <form onSubmit={handleAddLogSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Month</label>
+                  <select required value={addLogMonth} onChange={e => setAddLogMonth(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500">
+                    {Array.from({ length: 12 }, (_, i) => (
+                      <option key={i + 1} value={i + 1}>{formatMonthName(i + 1)}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
+                  <input type="number" required min="2000" max="2100" value={addLogYear}
+                    onChange={e => setAddLogYear(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Total Enrollment</label>
+                <input type="number" required min="0" value={addLogTotal}
+                  onChange={e => setAddLogTotal(e.target.value)}
+                  placeholder="Enter total enrollment for the month"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+              </div>
+              {addLogError && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{addLogError}</div>}
+              {addLogSuccess && <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-3 py-2">{addLogSuccess}</div>}
+              <div className="flex gap-3 pt-2">
+                <button type="submit" disabled={addLogSaving}
+                  className="flex-1 bg-teal-700 hover:bg-teal-800 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-60 text-sm">
+                  {addLogSaving ? 'Saving...' : 'Submit'}
+                </button>
+                <button type="button" onClick={() => setAddLogAgent(null)}
+                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 rounded-lg transition-colors text-sm">
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Edit Enrollment Log Modal */}
+      {editLog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-bold text-gray-800 mb-1">Edit Enrollment Log</h3>
+            <p className="text-sm text-gray-500 mb-4">Agent: <span className="font-medium text-gray-700">{editLog.agentName}</span></p>
+            <form onSubmit={handleEditLogSave} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Month</label>
+                  <select required value={editLogMonth} onChange={e => setEditLogMonth(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500">
+                    {Array.from({ length: 12 }, (_, i) => (
+                      <option key={i + 1} value={i + 1}>{formatMonthName(i + 1)}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
+                  <input type="number" required min="2000" max="2100" value={editLogYear}
+                    onChange={e => setEditLogYear(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Total Enrollment</label>
+                <input type="number" required min="0" value={editLogTotal}
+                  onChange={e => setEditLogTotal(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+              </div>
+              {editLogError && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{editLogError}</div>}
+              <div className="flex gap-3 pt-2">
+                <button type="submit" disabled={editLogSaving}
+                  className="flex-1 bg-teal-700 hover:bg-teal-800 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-60 text-sm">
+                  {editLogSaving ? 'Saving...' : 'Save Changes'}
+                </button>
+                <button type="button" onClick={() => setEditLog(null)}
+                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 rounded-lg transition-colors text-sm">
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       {/* Edit Agent Modal */}
       {editAgent && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -327,11 +548,11 @@ export default function AdminPage({ user: _user }: Props) {
       </header>
 
       <div className="max-w-7xl mx-auto p-4">
-        <div className="flex gap-2 mb-5">
-          {(['enrollments', 'agents'] as const).map(t => (
+        <div className="flex flex-wrap gap-2 mb-5">
+          {(['enrollments', 'agents', 'enrollmentLog'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-5 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm ${tab === t ? 'bg-teal-700 text-white' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
-              {t === 'enrollments' ? '📋 Enrollment Records' : '👥 Agents'}
+              {t === 'enrollments' ? '📋 Enrollment Records' : t === 'agents' ? '👥 Agents' : '📊 Enrollment Log'}
             </button>
           ))}
         </div>
@@ -669,6 +890,120 @@ export default function AdminPage({ user: _user }: Props) {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {tab === 'enrollmentLog' && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200">
+            <div className="p-5 border-b border-gray-100">
+              <h2 className="text-lg font-bold text-gray-800">Enrollment Log</h2>
+              <p className="text-sm text-gray-500 mt-0.5">Manage monthly enrollment totals per agent</p>
+              <div className="relative mt-3">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input type="text" placeholder="Search by Device ID..." value={deviceIdSearch}
+                  onChange={e => setDeviceIdSearch(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-gray-50" />
+              </div>
+            </div>
+
+            {(() => {
+              const filteredAgents = filterAgentsByDeviceId(agents, deviceIdSearch);
+              if (filteredAgents.length === 0) {
+                return (
+                  <div className="text-center py-16 text-gray-400">
+                    <p className="font-medium">{deviceIdSearch ? 'No agents found' : 'No agents registered yet.'}</p>
+                  </div>
+                );
+              }
+              return (
+                <div className="divide-y divide-gray-100">
+                  {filteredAgents.map(agent => {
+                    const isExpanded = expandedAgentId === agent.id;
+                    const logs = enrollmentLogsByAgent[agent.id] ?? [];
+                    const isLoadingLogs = loadingLogsForAgent === agent.id;
+                    return (
+                      <div key={agent.id}>
+                        <div className="flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-sm flex-shrink-0">
+                              {agent.name?.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <div className="font-semibold text-gray-800 text-sm">{agent.name}</div>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                {agent.deviceId
+                                  ? <span className="font-mono text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{agent.deviceId}</span>
+                                  : <span className="text-xs text-gray-400">No Device ID</span>}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => openAddLog(agent)}
+                              className="text-xs bg-teal-700 hover:bg-teal-800 text-white font-medium px-3 py-1.5 rounded-lg transition-colors">
+                              + Add
+                            </button>
+                            <button onClick={() => toggleAgentExpand(agent.id)}
+                              className="text-xs text-gray-500 hover:text-gray-700 border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 px-3 py-1.5 rounded-lg transition-colors font-medium">
+                              {isExpanded ? '▲ Hide' : '▼ View'}
+                            </button>
+                          </div>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="px-5 pb-4 bg-gray-50/60 border-t border-gray-100">
+                            {isLoadingLogs ? (
+                              <div className="flex items-center gap-2 py-6 text-gray-400 text-sm">
+                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                </svg>
+                                Loading logs...
+                              </div>
+                            ) : logs.length === 0 ? (
+                              <p className="text-sm text-gray-400 py-6 text-center">No log entries yet.</p>
+                            ) : (
+                              <div className="overflow-x-auto mt-3">
+                                <table className="w-full text-sm">
+                                  <thead>
+                                    <tr className="bg-white border border-gray-100 rounded-lg">
+                                      <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Month</th>
+                                      <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Year</th>
+                                      <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Enrollment</th>
+                                      <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-gray-100">
+                                    {logs.map(log => (
+                                      <tr key={log.id} className="bg-white hover:bg-teal-50 transition-colors">
+                                        <td className="px-4 py-3 font-medium text-gray-700">{formatMonthName(log.month)}</td>
+                                        <td className="px-4 py-3 text-gray-600">{log.year}</td>
+                                        <td className="px-4 py-3 text-right">
+                                          <span className="inline-flex items-center justify-center bg-teal-100 text-teal-800 font-bold text-sm px-3 py-1 rounded-full">
+                                            {log.totalEnrollment.toLocaleString()}
+                                          </span>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <button onClick={() => openEditLog(log)}
+                                            className="text-xs text-teal-600 hover:text-teal-800 border border-teal-200 hover:border-teal-400 bg-teal-50 hover:bg-teal-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">
+                                            Edit
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>

@@ -5,6 +5,7 @@ import { signOut } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { loadGeoData, State } from '../geoData';
 import Logo from '../components/Logo';
+import { EnrollmentLog, formatMonthName, sortEnrollmentLogs } from '../enrollmentLogUtils';
 
 interface Props { user: User; }
 
@@ -21,7 +22,7 @@ interface Record {
 }
 
 export default function AgentPage({ user }: Props) {
-  const [tab, setTab] = useState<'form' | 'history' | 'profile'>('form');
+  const [tab, setTab] = useState<'form' | 'history' | 'profile' | 'enrollmentLog'>('form');
   const [geoData, setGeoData] = useState<State[]>([]);
   const [stateId, setStateId] = useState('');
   const [lgaId, setLgaId] = useState('');
@@ -52,6 +53,8 @@ export default function AgentPage({ user }: Props) {
   const [error, setError] = useState('');
   const [history, setHistory] = useState<Record[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [enrollmentLogs, setEnrollmentLogs] = useState<EnrollmentLog[]>([]);
+  const [loadingEnrollmentLogs, setLoadingEnrollmentLogs] = useState(false);
 
   const selectedState = geoData.find(s => s.id === stateId);
   const selectedLga = selectedState?.lgas.find(l => l.id === lgaId);
@@ -59,6 +62,7 @@ export default function AgentPage({ user }: Props) {
 
   useEffect(() => {
     if (tab === 'history') loadHistory();
+    if (tab === 'enrollmentLog') loadEnrollmentLogs();
   }, [tab]);
 
   async function loadHistory() {
@@ -77,6 +81,23 @@ export default function AgentPage({ user }: Props) {
       console.error('Failed to load history:', err);
     } finally {
       setLoadingHistory(false);
+    }
+  }
+
+  async function loadEnrollmentLogs() {
+    setLoadingEnrollmentLogs(true);
+    try {
+      const q = query(
+        collection(db, 'enrollmentLogs'),
+        where('agentId', '==', user.uid)
+      );
+      const snap = await getDocs(q);
+      const logs = snap.docs.map(d => ({ id: d.id, ...d.data() } as EnrollmentLog));
+      setEnrollmentLogs(sortEnrollmentLogs(logs));
+    } catch (err: any) {
+      console.error('Failed to load enrollment logs:', err);
+    } finally {
+      setLoadingEnrollmentLogs(false);
     }
   }
 
@@ -154,11 +175,11 @@ export default function AgentPage({ user }: Props) {
       </header>
 
       <div className="max-w-2xl mx-auto p-4">
-        <div className="flex gap-2 mb-4">
-          {(['form', 'history', 'profile'] as const).map(t => (
+        <div className="flex flex-wrap gap-2 mb-4">
+          {(['form', 'history', 'profile', 'enrollmentLog'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === t ? 'bg-teal-700 text-white' : 'bg-white text-gray-600 border'}`}>
-              {t === 'form' ? 'Submit Enrollment' : t === 'history' ? 'My Submissions' : 'My Profile'}
+              {t === 'form' ? 'Submit Enrollment' : t === 'history' ? 'My Submissions' : t === 'profile' ? 'My Profile' : '📊 Enrollment Log'}
             </button>
           ))}
         </div>
@@ -279,6 +300,49 @@ export default function AgentPage({ user }: Props) {
                 {profileSaving ? 'Saving...' : 'Save Profile'}
               </button>
             </form>
+          </div>
+        )}
+
+        {tab === 'enrollmentLog' && (
+          <div className="bg-white rounded-xl shadow p-6">
+            <h2 className="text-lg font-semibold text-gray-800 mb-1">Enrollment Log</h2>
+            <p className="text-sm text-gray-500 mb-5">Your monthly enrollment totals recorded by the admin.</p>
+            {loadingEnrollmentLogs ? (
+              <div className="flex items-center justify-center py-10 text-gray-400 gap-2">
+                <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                Loading...
+              </div>
+            ) : enrollmentLogs.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-10">No enrollment log entries yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-100">
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Month</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Year</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Enrollment</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {enrollmentLogs.map((log, i) => (
+                      <tr key={log.id} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-teal-50 transition-colors`}>
+                        <td className="px-4 py-3.5 font-medium text-gray-700">{formatMonthName(log.month)}</td>
+                        <td className="px-4 py-3.5 text-gray-600">{log.year}</td>
+                        <td className="px-4 py-3.5 text-right">
+                          <span className="inline-flex items-center justify-center bg-teal-100 text-teal-800 font-bold text-sm px-3 py-1 rounded-full">
+                            {log.totalEnrollment.toLocaleString()}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </div>

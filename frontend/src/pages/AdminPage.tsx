@@ -1321,10 +1321,12 @@ export default function AdminPage({ user: _user }: Props) {
                                   className="text-xs text-teal-600 hover:text-teal-800 border border-teal-200 hover:border-teal-400 bg-teal-50 hover:bg-teal-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">
                                   Edit
                                 </button>
-                                <button onClick={() => handleDeleteAccountDetails(a)}
-                                  className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 bg-red-50 hover:bg-red-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">
-                                  Delete
-                                </button>
+                                {(a.accountNumber || a.accountName || a.bankName) && (
+                                  <button onClick={() => handleDeleteAccountDetails(a)}
+                                    className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 bg-red-50 hover:bg-red-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">
+                                    Delete
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>

@@ -45,6 +45,7 @@ export default function AgentPage({ user }: Props) {
   const [accountSaving, setAccountSaving] = useState(false);
   const [accountError, setAccountError] = useState('');
   const [accountSuccess, setAccountSuccess] = useState('');
+  const [accountLocked, setAccountLocked] = useState(false);
 
   useEffect(() => { loadGeoData().then(setGeoData); }, []);
 
@@ -61,6 +62,7 @@ export default function AgentPage({ user }: Props) {
         if (data.accountNumber) setAccountNumber(data.accountNumber);
         if (data.accountName) setAccountName(data.accountName);
         if (data.bankName) setBankName(data.bankName);
+        if (data.accountLocked) setAccountLocked(true);
       }
     });
   }, [user.uid]);
@@ -152,8 +154,9 @@ export default function AgentPage({ user }: Props) {
     }
     setAccountSaving(true);
     try {
-      await updateDoc(doc(db, 'users', user.uid), { accountNumber, accountName, bankName });
+      await updateDoc(doc(db, 'users', user.uid), { accountNumber, accountName, bankName, accountLocked: true });
       setAccountSuccess('Account details saved successfully!');
+      setAccountLocked(true);
     } catch (err: any) {
       setAccountError('Failed to save: ' + err.message);
     } finally {
@@ -389,48 +392,75 @@ export default function AgentPage({ user }: Props) {
               </svg>
               <span>⚠️ Your bank account name must match the name registered with the company. Please enter your account details carefully.</span>
             </div>
-            <form onSubmit={handleAccountSave} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Account Number</label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={10}
-                  value={accountNumber}
-                  onChange={e => setAccountNumber(e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
-                  placeholder="10-digit account number"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono"
-                />
+
+            {accountLocked ? (
+              <div className="space-y-4">
+                <div className="bg-blue-50 border border-blue-200 text-blue-800 text-sm rounded-lg px-4 py-3 flex items-start gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                  <span>Your account details have been submitted and are now locked. To make changes, please contact the admin.</span>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Account Number</label>
+                  <input type="text" value={accountNumber} disabled
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500 font-mono" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Account Name</label>
+                  <input type="text" value={accountName} disabled
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Bank Name</label>
+                  <input type="text" value={bankName} disabled
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500" />
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Account Name</label>
-                <input
-                  type="text"
-                  maxLength={100}
-                  value={accountName}
-                  onChange={e => setAccountName(e.target.value)}
-                  placeholder="Name on your bank account"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Bank Name</label>
-                <input
-                  type="text"
-                  maxLength={100}
-                  value={bankName}
-                  onChange={e => setBankName(e.target.value)}
-                  placeholder="e.g. First Bank, GTBank"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                />
-              </div>
-              {accountError && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{accountError}</div>}
-              {accountSuccess && <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-3 py-2">{accountSuccess}</div>}
-              <button type="submit" disabled={accountSaving}
-                className="w-full bg-teal-700 hover:bg-teal-800 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-60 text-sm">
-                {accountSaving ? 'Saving...' : 'Save Account Details'}
-              </button>
-            </form>
+            ) : (
+              <form onSubmit={handleAccountSave} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Account Number</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={10}
+                    value={accountNumber}
+                    onChange={e => setAccountNumber(e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
+                    placeholder="10-digit account number"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Account Name</label>
+                  <input
+                    type="text"
+                    maxLength={100}
+                    value={accountName}
+                    onChange={e => setAccountName(e.target.value)}
+                    placeholder="Name on your bank account"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Bank Name</label>
+                  <input
+                    type="text"
+                    maxLength={100}
+                    value={bankName}
+                    onChange={e => setBankName(e.target.value)}
+                    placeholder="e.g. First Bank, GTBank"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+                {accountError && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{accountError}</div>}
+                {accountSuccess && <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-3 py-2">{accountSuccess}</div>}
+                <button type="submit" disabled={accountSaving}
+                  className="w-full bg-teal-700 hover:bg-teal-800 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-60 text-sm">
+                  {accountSaving ? 'Saving...' : 'Save Account Details'}
+                </button>
+              </form>
+            )}
           </div>
         )}
 

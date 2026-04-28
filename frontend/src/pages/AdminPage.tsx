@@ -20,7 +20,7 @@ interface Enrollment {
   deviceId: string; dailyFigures: number; issuesComplaints: string;
   agentName: string; agentEmail: string; submittedAt: string;
 }
-interface Agent { id: string; name: string; email: string; deviceId?: string; phone?: string; createdAt: string; accountNumber?: string; accountName?: string; bankName?: string; }
+interface Agent { id: string; name: string; email: string; deviceId?: string; phone?: string; createdAt: string; accountNumber?: string; accountName?: string; bankName?: string; accountLocked?: boolean; }
 
 export default function AdminPage({ user: _user }: Props) {
   const [tab, setTab] = useState<'enrollments' | 'agents' | 'enrollmentLog' | 'accountDetails'>('enrollments');
@@ -84,6 +84,13 @@ export default function AdminPage({ user: _user }: Props) {
   const [loadingAccountAgents, setLoadingAccountAgents] = useState(false);
   const [accountAgentsError, setAccountAgentsError] = useState('');
   const [accountDeviceIdSearch, setAccountDeviceIdSearch] = useState('');
+  // Edit account details modal
+  const [editAccountAgent, setEditAccountAgent] = useState<Agent | null>(null);
+  const [editAccountNumber, setEditAccountNumber] = useState('');
+  const [editAccountName, setEditAccountName] = useState('');
+  const [editBankName, setEditBankName] = useState('');
+  const [editAccountSaving, setEditAccountSaving] = useState(false);
+  const [editAccountError, setEditAccountError] = useState('');
 
   function loadAgents() {
     const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
@@ -365,6 +372,43 @@ export default function AdminPage({ user: _user }: Props) {
 
   const filteredAccountAgents = filterAgentsByDeviceId(accountAgents, accountDeviceIdSearch);
 
+  function openEditAccount(agent: Agent) {
+    setEditAccountAgent(agent);
+    setEditAccountNumber(agent.accountNumber || '');
+    setEditAccountName(agent.accountName || '');
+    setEditBankName(agent.bankName || '');
+    setEditAccountError('');
+  }
+
+  async function handleEditAccountSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editAccountAgent) return;
+    if (!editAccountNumber.trim() || !editAccountName.trim() || !editBankName.trim()) {
+      setEditAccountError('All three fields are required.');
+      return;
+    }
+    setEditAccountSaving(true);
+    setEditAccountError('');
+    try {
+      await updateDoc(doc(db, 'users', editAccountAgent.id), {
+        accountNumber: editAccountNumber.trim(),
+        accountName: editAccountName.trim(),
+        bankName: editBankName.trim(),
+        accountLocked: true,
+      });
+      setAccountAgents(prev => prev.map(a =>
+        a.id === editAccountAgent.id
+          ? { ...a, accountNumber: editAccountNumber.trim(), accountName: editAccountName.trim(), bankName: editBankName.trim(), accountLocked: true }
+          : a
+      ));
+      setEditAccountAgent(null);
+    } catch (err: any) {
+      setEditAccountError('Failed to save: ' + err.message);
+    } finally {
+      setEditAccountSaving(false);
+    }
+  }
+
   function exportAccountDetailsExcel() {
     const today = new Date().toISOString().split('T')[0];
     const fileName = `account-details-${today}.xlsx`;
@@ -582,6 +626,62 @@ export default function AdminPage({ user: _user }: Props) {
                   {editEnrollmentSaving ? 'Saving...' : 'Save Changes'}
                 </button>
                 <button type="button" onClick={() => setEditEnrollment(null)}
+                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 rounded-lg transition-colors text-sm">
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Edit Account Details Modal */}
+      {editAccountAgent && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-bold text-gray-800 mb-1">Edit Account Details</h3>
+            <p className="text-sm text-gray-500 mb-4">Agent: <span className="font-medium text-gray-700">{editAccountAgent.name}</span></p>
+            <form onSubmit={handleEditAccountSave} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Account Number</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={10}
+                  value={editAccountNumber}
+                  onChange={e => setEditAccountNumber(e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
+                  placeholder="10-digit account number"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Account Name</label>
+                <input
+                  type="text"
+                  maxLength={100}
+                  value={editAccountName}
+                  onChange={e => setEditAccountName(e.target.value)}
+                  placeholder="Name on bank account"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Bank Name</label>
+                <input
+                  type="text"
+                  maxLength={100}
+                  value={editBankName}
+                  onChange={e => setEditBankName(e.target.value)}
+                  placeholder="e.g. First Bank, GTBank"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+              {editAccountError && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{editAccountError}</div>}
+              <div className="flex gap-3 pt-2">
+                <button type="submit" disabled={editAccountSaving}
+                  className="flex-1 bg-teal-700 hover:bg-teal-800 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-60 text-sm">
+                  {editAccountSaving ? 'Saving...' : 'Save Changes'}
+                </button>
+                <button type="button" onClick={() => setEditAccountAgent(null)}
                   className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 rounded-lg transition-colors text-sm">
                   Cancel
                 </button>
@@ -1122,6 +1222,7 @@ export default function AdminPage({ user: _user }: Props) {
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Account Number</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Account Name</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Bank Name</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
@@ -1151,6 +1252,12 @@ export default function AdminPage({ user: _user }: Props) {
                             <td className="px-4 py-3.5 text-gray-700">{a.bankName || <span className="text-gray-300">—</span>}</td>
                           </>
                         )}
+                        <td className="px-4 py-3.5">
+                          <button onClick={() => openEditAccount(a)}
+                            className="text-xs text-teal-600 hover:text-teal-800 border border-teal-200 hover:border-teal-400 bg-teal-50 hover:bg-teal-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">
+                            Edit
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

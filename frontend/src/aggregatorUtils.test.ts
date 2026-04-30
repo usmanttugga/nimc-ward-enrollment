@@ -107,7 +107,6 @@ describe('Property 3: Enrollment scoping excludes non-linked agents', () => {
           }
 
           // Every record whose agentId is in linkedUids must appear in the result
-          const resultIds = new Set(result.map((r) => r.agentId));
           for (const r of records) {
             if (uidSet.has(r.agentId)) {
               // The record itself should be in the result (check by reference)

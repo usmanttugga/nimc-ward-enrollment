@@ -5,10 +5,11 @@ import { auth, db } from './firebase';
 import AuthPage from './pages/AuthPage';
 import AgentPage from './pages/AgentPage';
 import AdminPage from './pages/AdminPage';
+import AggregatorPage from './pages/AggregatorPage';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [role, setRole] = useState<'AGENT' | 'ADMIN' | null>(null);
+  const [role, setRole] = useState<'AGENT' | 'ADMIN' | 'AGGREGATOR' | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -34,5 +35,6 @@ export default function App() {
 
   if (!user || !role) return <AuthPage />;
   if (role === 'ADMIN') return <AdminPage user={user} />;
+  if (role === 'AGGREGATOR') return <AggregatorPage user={user} />;
   return <AgentPage user={user} />;
 }

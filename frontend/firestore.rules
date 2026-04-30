@@ -7,11 +7,35 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN';
     }
 
+    function isAggregator() {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'AGGREGATOR';
+    }
+
+    function callerAggregatorUid() {
+      return request.auth.uid;
+    }
+
     match /users/{userId} {
       // Users can read/write their own profile
       allow read, write: if request.auth != null && request.auth.uid == userId;
       // Admins can read and write any user document
       allow read, write: if isAdmin();
+      // Aggregators can read agent documents linked to them
+      allow read: if isAggregator() &&
+        resource.data.role == 'AGENT' &&
+        resource.data.aggregatorId == callerAggregatorUid();
+      // Aggregators can link an unlinked agent to themselves
+      // Server-side enforcement of the exclusive ownership constraint (Requirement 12):
+      // the condition `!('aggregatorId' in resource.data) || resource.data.aggregatorId == null`
+      // ensures that once an agent is owned by any aggregator, no other aggregator can
+      // overwrite that field via a direct write. The transaction-based link operation in the
+      // client provides the check-and-set pattern; this rule is the authoritative backstop.
+      allow update: if isAggregator() &&
+        resource.data.role == 'AGENT' &&
+        (!('aggregatorId' in resource.data) || resource.data.aggregatorId == null) &&
+        request.resource.data.aggregatorId == callerAggregatorUid() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['aggregatorId']);
     }
 
     match /enrollments/{docId} {
@@ -29,13 +53,20 @@ service cloud.firestore {
     match /enrollmentLogs/{docId} {
       // Only admins can create or update enrollment log entries
       allow create, update: if isAdmin();
-      // Agents can read only their own entries; admins can read all
+      // Agents can read only their own entries; admins can read all; aggregators can read entries for their linked agents
       allow read, list: if request.auth != null && (
         isAdmin() ||
-        resource.data.agentId == request.auth.uid
+        resource.data.agentId == request.auth.uid ||
+        (isAggregator() &&
+          get(/databases/$(database)/documents/users/$(resource.data.agentId)).data.aggregatorId == callerAggregatorUid())
       );
       // Deletes not permitted
       allow delete: if isAdmin();
+    }
+
+    match /counters/{docId} {
+      // Only authenticated users can read/write counters (for ID generation)
+      allow read, write: if request.auth != null;
     }
   }
 }

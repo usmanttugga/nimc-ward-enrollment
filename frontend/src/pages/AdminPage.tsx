@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { User, signOut, createUserWithEmailAndPassword, updateProfile, getAuth, sendPasswordResetEmail } from 'firebase/auth';
-import { collection, query, orderBy, getDocs, doc, setDoc, deleteDoc, updateDoc, addDoc, where } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, doc, setDoc, deleteDoc, updateDoc, addDoc, where, runTransaction } from 'firebase/firestore';
+import { loadGeoData, State } from '../geoData';
+import { formatAggregatorId, AggregatorUser } from '../aggregatorUtils';
 import { initializeApp } from 'firebase/app';
 import * as XLSX from 'xlsx';
 import { auth, db } from '../firebase';
@@ -20,10 +22,10 @@ interface Enrollment {
   deviceId: string; dailyFigures: number; issuesComplaints: string;
   agentName: string; agentEmail: string; submittedAt: string;
 }
-interface Agent { id: string; name: string; email: string; deviceId?: string; phone?: string; createdAt: string; accountNumber?: string; accountName?: string; bankName?: string; accountLocked?: boolean; }
+interface Agent { id: string; name: string; email: string; deviceId?: string; phone?: string; createdAt: string; accountNumber?: string; accountName?: string; bankName?: string; accountLocked?: boolean; aggregatorId?: string; }
 
 export default function AdminPage({ user: _user }: Props) {
-  const [tab, setTab] = useState<'enrollments' | 'agents' | 'enrollmentLog' | 'accountDetails'>('enrollments');
+  const [tab, setTab] = useState<'enrollments' | 'agents' | 'enrollmentLog' | 'accountDetails' | 'aggregators'>('enrollments');
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [search, setSearch] = useState('');
@@ -36,11 +38,23 @@ export default function AdminPage({ user: _user }: Props) {
   const [newPassword, setNewPassword] = useState('');
   const [newDeviceId, setNewDeviceId] = useState('');
   const [newPhone, setNewPhone] = useState('');
-  const [newRole, setNewRole] = useState<'AGENT' | 'ADMIN'>('AGENT');
+  const [newRole, setNewRole] = useState<'AGENT' | 'ADMIN' | 'AGGREGATOR'>('AGENT');
   const [addingUser, setAddingUser] = useState(false);
   const [addError, setAddError] = useState('');
   const [addSuccess, setAddSuccess] = useState('');
   const [editAgent, setEditAgent] = useState<Agent | null>(null);
+  // --- Geo data for AGENT/AGGREGATOR creation ---
+  const [geoData, setGeoData] = useState<State[]>([]);
+  const [newStateId, setNewStateId] = useState('');
+  const [newStateName, setNewStateName] = useState('');
+  const [newLgaId, setNewLgaId] = useState('');
+  const [newLgaName, setNewLgaName] = useState('');
+  // --- Aggregators tab state ---
+  const [aggregators, setAggregators] = useState<AggregatorUser[]>([]);
+  const [loadingAggregators, setLoadingAggregators] = useState(false);
+  // --- Assign aggregator state ---
+  const [allAggregators, setAllAggregators] = useState<AggregatorUser[]>([]);
+  const [assigningAggregatorId, setAssigningAggregatorId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editDeviceId, setEditDeviceId] = useState('');
   const [editPhone, setEditPhone] = useState('');
@@ -106,6 +120,23 @@ export default function AdminPage({ user: _user }: Props) {
     });
   }
 
+  async function loadAggregators() {
+    setLoadingAggregators(true);
+    try {
+      const q = query(collection(db, 'users'), where('role', '==', 'AGGREGATOR'));
+      const snap = await getDocs(q);
+      setAggregators(snap.docs.map(d => ({ id: d.id, ...d.data() } as AggregatorUser)));
+    } finally {
+      setLoadingAggregators(false);
+    }
+  }
+
+  async function loadAllAggregators() {
+    const q = query(collection(db, 'users'), where('role', '==', 'AGGREGATOR'));
+    const snap = await getDocs(q);
+    setAllAggregators(snap.docs.map(d => ({ id: d.id, ...d.data() } as AggregatorUser)));
+  }
+
   async function loadAccountAgents() {
     setLoadingAccountAgents(true);
     setAccountAgentsError('');
@@ -120,6 +151,8 @@ export default function AdminPage({ user: _user }: Props) {
     }
   }
 
+  useEffect(() => { loadGeoData().then(setGeoData); }, []);
+
   useEffect(() => {
     setLoading(true);
     if (tab === 'enrollments') {
@@ -129,7 +162,9 @@ export default function AdminPage({ user: _user }: Props) {
       }).finally(() => setLoading(false));
     } else {
       if (tab === 'accountDetails' && accountAgents.length === 0) loadAccountAgents();
-      if (agents.length === 0) loadAgents();
+      if (tab === 'aggregators') loadAggregators();
+      if (tab === 'agents') { loadAgents(); loadAllAggregators(); }
+      else if (agents.length === 0) loadAgents();
       setLoading(false);
     }
   }, [tab]);
@@ -199,13 +234,41 @@ export default function AdminPage({ user: _user }: Props) {
       const secondaryAuth = getAuth(secondaryApp);
       const cred = await createUserWithEmailAndPassword(secondaryAuth, newEmail, newPassword);
       await updateProfile(cred.user, { displayName: newName });
-      await setDoc(doc(db, 'users', cred.user.uid), {
-        name: newName, email: newEmail, role: newRole,
-        deviceId: newDeviceId, phone: newPhone, createdAt: new Date().toISOString(),
-      });
-      await secondaryAuth.signOut();
-      setAddSuccess(`"${newName}" created as ${newRole}.`);
+
+      if (newRole === 'AGGREGATOR') {
+        const counterRef = doc(db, 'counters', 'aggregatorId');
+        const aggId = await runTransaction(db, async (tx) => {
+          const snap = await tx.get(counterRef);
+          const next = snap.exists() ? (snap.data().lastSequence as number) + 1 : 1;
+          tx.set(counterRef, { lastSequence: next });
+          return formatAggregatorId(next);
+        });
+        await setDoc(doc(db, 'users', cred.user.uid), {
+          name: newName, email: newEmail, role: 'AGGREGATOR',
+          aggregatorId: aggId, phone: newPhone, createdAt: new Date().toISOString(),
+        });
+        await secondaryAuth.signOut();
+        setAddSuccess(`"${newName}" created as AGGREGATOR. ID: ${aggId}`);
+      } else if (newRole === 'AGENT') {
+        await setDoc(doc(db, 'users', cred.user.uid), {
+          name: newName, email: newEmail, role: newRole,
+          deviceId: newDeviceId, phone: newPhone, createdAt: new Date().toISOString(),
+          profileStateId: newStateId, profileStateName: newStateName,
+          profileLgaId: newLgaId, profileLgaName: newLgaName,
+        });
+        await secondaryAuth.signOut();
+        setAddSuccess(`"${newName}" created as ${newRole}.`);
+      } else {
+        await setDoc(doc(db, 'users', cred.user.uid), {
+          name: newName, email: newEmail, role: newRole,
+          deviceId: newDeviceId, phone: newPhone, createdAt: new Date().toISOString(),
+        });
+        await secondaryAuth.signOut();
+        setAddSuccess(`"${newName}" created as ${newRole}.`);
+      }
+
       setNewName(''); setNewEmail(''); setNewPassword(''); setNewDeviceId(''); setNewPhone(''); setNewRole('AGENT');
+      setNewStateId(''); setNewStateName(''); setNewLgaId(''); setNewLgaName('');
       loadAgents();
     } catch (err: any) {
       const msg: Record<string, string> = {
@@ -226,6 +289,22 @@ export default function AdminPage({ user: _user }: Props) {
       setAgents(prev => prev.filter(a => a.id !== agentId));
     } catch (err: any) {
       alert('Failed to delete user: ' + err.message);
+    }
+  }
+
+  async function handleAssignAggregator(agentId: string, agentName: string, aggregatorUid: string, _aggregatorDisplayId: string) {
+    const agent = agents.find(a => a.id === agentId);
+    if (agent?.aggregatorId) {
+      if (!window.confirm(`"${agentName}" is already assigned to an aggregator. Overwrite the assignment?`)) return;
+    }
+    setAssigningAggregatorId(agentId);
+    try {
+      await updateDoc(doc(db, 'users', agentId), { aggregatorId: aggregatorUid });
+      setAgents(prev => prev.map(a => a.id === agentId ? { ...a, aggregatorId: aggregatorUid } : a));
+    } catch (err: any) {
+      alert(`Failed to assign aggregator: ${err.message}`);
+    } finally {
+      setAssigningAggregatorId(null);
     }
   }
 
@@ -728,10 +807,10 @@ export default function AdminPage({ user: _user }: Props) {
 
       <div className="max-w-7xl mx-auto p-4">
         <div className="flex flex-wrap gap-2 mb-5">
-          {(['enrollments', 'agents', 'enrollmentLog', 'accountDetails'] as const).map(t => (
+          {(['enrollments', 'agents', 'enrollmentLog', 'accountDetails', 'aggregators'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-5 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm ${tab === t ? 'bg-teal-700 text-white' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
-              {t === 'enrollments' ? '📋 Enrollment Records' : t === 'agents' ? '👥 Agents' : t === 'enrollmentLog' ? '📊 Enrollment Log' : '🏦 Account Details'}
+              {t === 'enrollments' ? '📋 Enrollment Records' : t === 'agents' ? '👥 Agents' : t === 'enrollmentLog' ? '📊 Enrollment Log' : t === 'accountDetails' ? '🏦 Account Details' : '👤 Aggregators'}
             </button>
           ))}
         </div>
@@ -936,6 +1015,7 @@ export default function AdminPage({ user: _user }: Props) {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
                     <input type="password" required value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Min. 6 characters" className={inputCls} />
                   </div>
+                  {newRole !== 'AGGREGATOR' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Device ID <span className="text-gray-400">(optional)</span></label>
                     <input type="text" value={newDeviceId} onChange={e => setNewDeviceId(e.target.value.slice(0, 20))}
@@ -943,6 +1023,7 @@ export default function AdminPage({ user: _user }: Props) {
                       className={inputCls + ' font-mono'} />
                     <p className="text-xs text-gray-400 mt-1">{newDeviceId.length}/20 characters</p>
                   </div>
+                  )}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number <span className="text-gray-400">(optional)</span></label>
                     <input type="tel" value={newPhone}
@@ -951,11 +1032,43 @@ export default function AdminPage({ user: _user }: Props) {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                    <select value={newRole} onChange={e => setNewRole(e.target.value as 'AGENT' | 'ADMIN')} className={inputCls}>
+                    <select value={newRole} onChange={e => { setNewRole(e.target.value as 'AGENT' | 'ADMIN' | 'AGGREGATOR'); setNewStateId(''); setNewStateName(''); setNewLgaId(''); setNewLgaName(''); }} className={inputCls}>
                       <option value="AGENT">Agent</option>
                       <option value="ADMIN">Admin</option>
+                      <option value="AGGREGATOR">Aggregator</option>
                     </select>
                   </div>
+                  {newRole === 'AGENT' && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
+                        <select required value={newStateId} onChange={e => {
+                          const s = geoData.find(st => st.id === e.target.value);
+                          setNewStateId(e.target.value);
+                          setNewStateName(s?.name ?? '');
+                          setNewLgaId('');
+                          setNewLgaName('');
+                        }} className={inputCls}>
+                          <option value="">-- Select State --</option>
+                          {geoData.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">LGA</label>
+                        <select required disabled={!newStateId} value={newLgaId} onChange={e => {
+                          const lgas = geoData.find(s => s.id === newStateId)?.lgas ?? [];
+                          const l = lgas.find(lg => lg.id === e.target.value);
+                          setNewLgaId(e.target.value);
+                          setNewLgaName(l?.name ?? '');
+                        }} className={inputCls + ' disabled:bg-gray-100'}>
+                          <option value="">-- Select LGA --</option>
+                          {(geoData.find(s => s.id === newStateId)?.lgas ?? []).map(l => (
+                            <option key={l.id} value={l.id}>{l.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
+                  )}
                   <div className="sm:col-span-2">
                     {addError && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2 mb-3">{addError}</div>}
                     {addSuccess && <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-3 py-2 mb-3">{addSuccess}</div>}
@@ -985,6 +1098,7 @@ export default function AdminPage({ user: _user }: Props) {
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Phone</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Device ID</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Registered</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Aggregator</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
                       </tr>
                     </thead>
@@ -1005,6 +1119,27 @@ export default function AdminPage({ user: _user }: Props) {
                             <span className="font-mono text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">{a.deviceId || '—'}</span>
                           </td>
                           <td className="px-4 py-3.5 text-gray-400 text-xs">{new Date(a.createdAt).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</td>
+                          <td className="px-4 py-3.5">
+                            {a.aggregatorId
+                              ? <span className="text-xs text-teal-700 font-medium">{allAggregators.find(ag => ag.id === a.aggregatorId)?.name ?? a.aggregatorId}</span>
+                              : <span className="text-gray-300 text-xs">—</span>}
+                            <div className="mt-1">
+                              <select
+                                value={a.aggregatorId || ''}
+                                disabled={assigningAggregatorId === a.id}
+                                onChange={e => {
+                                  const agg = allAggregators.find(ag => ag.id === e.target.value);
+                                  if (agg) handleAssignAggregator(a.id, a.name, agg.id, agg.aggregatorId);
+                                }}
+                                className="text-xs border border-gray-200 rounded px-2 py-1 bg-white"
+                              >
+                                <option value="">-- Assign Aggregator --</option>
+                                {allAggregators.map(agg => (
+                                  <option key={agg.id} value={agg.id}>{agg.name} ({agg.aggregatorId})</option>
+                                ))}
+                              </select>
+                            </div>
+                          </td>
                           <td className="px-4 py-3.5">
                             <div className="flex flex-col gap-1.5">
                               <div className="flex gap-1.5">
@@ -1368,6 +1503,58 @@ export default function AdminPage({ user: _user }: Props) {
                 );
               })()}
               </>
+            )}
+          </div>
+        )}
+
+        {tab === 'aggregators' && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200">
+            <div className="p-5 border-b border-gray-100">
+              <h2 className="text-lg font-bold text-gray-800">Aggregators</h2>
+              <p className="text-sm text-gray-500 mt-0.5">{aggregators.length} aggregator{aggregators.length !== 1 ? 's' : ''}</p>
+            </div>
+            {loadingAggregators ? (
+              <div className="flex items-center justify-center py-16 text-gray-400">
+                <svg className="animate-spin h-6 w-6 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                Loading aggregators...
+              </div>
+            ) : aggregators.length === 0 ? (
+              <div className="text-center py-16 text-gray-400">No aggregators registered yet.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-100">
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Aggregator ID</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Phone</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {aggregators.map((agg, i) => (
+                      <tr key={agg.id} className={`hover:bg-teal-50 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                        <td className="px-4 py-3.5">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-sm">
+                              {agg.name?.charAt(0).toUpperCase()}
+                            </div>
+                            <span className="font-semibold text-gray-800">{agg.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5 text-gray-500">{agg.email}</td>
+                        <td className="px-4 py-3.5">
+                          <span className="font-mono text-xs bg-teal-50 text-teal-700 border border-teal-200 px-2 py-1 rounded">{agg.aggregatorId}</span>
+                        </td>
+                        <td className="px-4 py-3.5 text-gray-500 text-xs">{agg.phone || <span className="text-gray-300">—</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         )}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { User, signOut, createUserWithEmailAndPassword, updateProfile, getAuth, sendPasswordResetEmail } from 'firebase/auth';
-import { collection, query, orderBy, getDocs, doc, setDoc, deleteDoc, updateDoc, addDoc, where, runTransaction } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, doc, setDoc, deleteDoc, updateDoc, addDoc, where, runTransaction, getDoc } from 'firebase/firestore';
 import { loadGeoData, State } from '../geoData';
 import { formatAggregatorId, AggregatorUser } from '../aggregatorUtils';
 import { initializeApp } from 'firebase/app';
@@ -15,6 +15,9 @@ import {
   sortEnrollmentLogs,
   EnrollmentLog,
 } from '../enrollmentLogUtils';
+
+// Backend API URL configuration
+const BACKEND_URL = import.meta.env?.VITE_BACKEND_URL || 'http://localhost:3000';
 
 interface Props { user: User; }
 interface Enrollment {
@@ -52,6 +55,27 @@ export default function AdminPage({ user: _user }: Props) {
   // --- Aggregators tab state ---
   const [aggregators, setAggregators] = useState<AggregatorUser[]>([]);
   const [loadingAggregators, setLoadingAggregators] = useState(false);
+  const [aggregatorSearch, setAggregatorSearch] = useState('');
+  const [showAddAggregator, setShowAddAggregator] = useState(false);
+  const [addAggName, setAddAggName] = useState('');
+  const [addAggEmail, setAddAggEmail] = useState('');
+  const [addAggPassword, setAddAggPassword] = useState('');
+  const [addAggPhone, setAddAggPhone] = useState('');
+  const [addAggLoading, setAddAggLoading] = useState(false);
+  const [addAggError, setAddAggError] = useState('');
+  const [addAggSuccess, setAddAggSuccess] = useState('');
+  // Invite code management
+  const [inviteCode, setInviteCode] = useState('');
+  const [inviteCodeInput, setInviteCodeInput] = useState('');
+  const [savingInviteCode, setSavingInviteCode] = useState(false);
+  const [inviteCodeMsg, setInviteCodeMsg] = useState('');
+  // Edit aggregator modal
+  const [editAggregator, setEditAggregator] = useState<AggregatorUser | null>(null);
+  const [editAggName, setEditAggName] = useState('');
+  const [editAggPhone, setEditAggPhone] = useState('');
+  const [editAggSaving, setEditAggSaving] = useState(false);
+  const [editAggError, setEditAggError] = useState('');
+  const [aggResetMsg, setAggResetMsg] = useState<Record<string, string>>({});
   // --- Assign aggregator state ---
   const [allAggregators, setAllAggregators] = useState<AggregatorUser[]>([]);
   const [assigningAggregatorId, setAssigningAggregatorId] = useState<string | null>(null);
@@ -66,6 +90,7 @@ export default function AdminPage({ user: _user }: Props) {
   const PAGE_SIZE = 50;
   const [agentPage, setAgentPage] = useState(0);
   const AGENT_PAGE_SIZE = 20;
+  const [agentSearch, setAgentSearch] = useState('');
   const [editEnrollment, setEditEnrollment] = useState<Enrollment | null>(null);
   const [editDate, setEditDate] = useState('');
   const [editDailyFigures, setEditDailyFigures] = useState('');
@@ -129,12 +154,171 @@ export default function AdminPage({ user: _user }: Props) {
     } finally {
       setLoadingAggregators(false);
     }
+    // Also load the current invite code
+    const codeSnap = await getDoc(doc(db, 'settings', 'aggregatorInviteCode'));
+    const code = codeSnap.exists() ? (codeSnap.data().code ?? '') : '';
+    setInviteCode(code);
+    setInviteCodeInput(code);
+  }
+
+  async function handleSaveInviteCode(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingInviteCode(true);
+    setInviteCodeMsg('');
+    try {
+      await setDoc(doc(db, 'settings', 'aggregatorInviteCode'), { code: inviteCodeInput.trim() });
+      setInviteCode(inviteCodeInput.trim());
+      setInviteCodeMsg('Invite code saved successfully.');
+      setTimeout(() => setInviteCodeMsg(''), 3000);
+    } catch (err: any) {
+      setInviteCodeMsg('Failed to save: ' + err.message);
+    } finally {
+      setSavingInviteCode(false);
+    }
   }
 
   async function loadAllAggregators() {
     const q = query(collection(db, 'users'), where('role', '==', 'AGGREGATOR'));
     const snap = await getDocs(q);
     setAllAggregators(snap.docs.map(d => ({ id: d.id, ...d.data() } as AggregatorUser)));
+  }
+
+  function openEditAggregator(agg: AggregatorUser) {
+    setEditAggregator(agg);
+    setEditAggName(agg.name);
+    setEditAggPhone(agg.phone || '');
+    setEditAggError('');
+  }
+
+  async function handleEditAggregatorSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editAggregator) return;
+    if (!editAggName.trim()) { setEditAggError('Name is required.'); return; }
+    setEditAggSaving(true);
+    setEditAggError('');
+    try {
+      await updateDoc(doc(db, 'users', editAggregator.id), { name: editAggName.trim(), phone: editAggPhone });
+      setAggregators(prev => prev.map(a => a.id === editAggregator.id ? { ...a, name: editAggName.trim(), phone: editAggPhone } : a));
+      setAllAggregators(prev => prev.map(a => a.id === editAggregator.id ? { ...a, name: editAggName.trim(), phone: editAggPhone } : a));
+      setEditAggregator(null);
+    } catch (err: any) {
+      setEditAggError('Failed to update: ' + err.message);
+    } finally {
+      setEditAggSaving(false);
+    }
+  }
+
+  async function handleDeleteAggregator(aggId: string, aggName: string) {
+    if (!window.confirm(`Delete aggregator "${aggName}"? This removes their profile. Their linked agents will become unlinked.`)) return;
+    try {
+      await deleteDoc(doc(db, 'users', aggId));
+      setAggregators(prev => prev.filter(a => a.id !== aggId));
+      setAllAggregators(prev => prev.filter(a => a.id !== aggId));
+    } catch (err: any) {
+      alert('Failed to delete aggregator: ' + err.message);
+    }
+  }
+
+  async function handleAddAggregator(e: React.FormEvent) {
+    e.preventDefault();
+    setAddAggError(''); setAddAggSuccess('');
+    setAddAggLoading(true);
+    try {
+      const secondaryApp = initializeApp(auth.app.options, 'secondary-agg-' + Date.now());
+      const secondaryAuth = getAuth(secondaryApp);
+      const cred = await createUserWithEmailAndPassword(secondaryAuth, addAggEmail, addAggPassword);
+      await updateProfile(cred.user, { displayName: addAggName });
+      
+      // Create user document first (without aggregatorId)
+      await setDoc(doc(db, 'users', cred.user.uid), {
+        name: addAggName, email: addAggEmail, role: 'AGGREGATOR',
+        phone: addAggPhone, createdAt: new Date().toISOString(),
+      });
+
+      // Call backend API to assign aggregator ID
+      let aggId: string;
+      try {
+        const idToken = await _user.getIdToken();
+        
+        const response = await fetch(`${BACKEND_URL}/admin/assign-aggregator-id`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({ userId: cred.user.uid }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || errorData.details || 'Failed to assign aggregator ID');
+        }
+
+        const data = await response.json();
+        aggId = data.aggregatorId;
+
+        // Update Firestore with the assigned aggregator ID
+        await updateDoc(doc(db, 'users', cred.user.uid), {
+          aggregatorId: aggId,
+        });
+      } catch (apiError: any) {
+        // If API call fails, fall back to the old method
+        console.warn('Backend API call failed, using fallback method:', apiError.message);
+        const counterRef = doc(db, 'counters', 'aggregatorId');
+        aggId = await runTransaction(db, async (tx) => {
+          const snap = await tx.get(counterRef);
+          const next = snap.exists() ? (snap.data().lastSequence as number) + 1 : 1;
+          tx.set(counterRef, { lastSequence: next });
+          return formatAggregatorId(next);
+        });
+        await updateDoc(doc(db, 'users', cred.user.uid), {
+          aggregatorId: aggId,
+        });
+      }
+
+      await secondaryAuth.signOut();
+      
+      // Create the new aggregator object with the assigned ID
+      const newAggregator: AggregatorUser = {
+        id: cred.user.uid,
+        name: addAggName,
+        email: addAggEmail,
+        role: 'AGGREGATOR',
+        phone: addAggPhone,
+        createdAt: new Date().toISOString(),
+        aggregatorId: aggId,
+        profileStateId: '',
+        profileStateName: '',
+        profileLgaId: '',
+        profileLgaName: '',
+      };
+      
+      // Optimistically update the local state
+      setAggregators(prev => [...prev, newAggregator]);
+      setAllAggregators(prev => [...prev, newAggregator]);
+      
+      setAddAggSuccess(`"${addAggName}" created as AGGREGATOR. Assigned ID: ${aggId}`);
+      setAddAggName(''); setAddAggEmail(''); setAddAggPassword(''); setAddAggPhone('');
+    } catch (err: any) {
+      const msg: Record<string, string> = {
+        'auth/email-already-in-use': 'Email already registered.',
+        'auth/weak-password': 'Password must be at least 6 characters.',
+        'auth/invalid-email': 'Invalid email address.',
+      };
+      setAddAggError(msg[err.code] || err.message);
+    } finally {
+      setAddAggLoading(false);
+    }
+  }
+
+  async function handleAggregatorPasswordReset(aggId: string, email: string) {
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setAggResetMsg(prev => ({ ...prev, [aggId]: `Reset email sent to ${email}` }));
+      setTimeout(() => setAggResetMsg(prev => { const n = { ...prev }; delete n[aggId]; return n; }), 5000);
+    } catch (err: any) {
+      alert('Failed to send reset email: ' + err.message);
+    }
   }
 
   async function loadAccountAgents() {
@@ -181,8 +365,16 @@ export default function AdminPage({ user: _user }: Props) {
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-  const agentTotalPages = Math.ceil(agents.length / AGENT_PAGE_SIZE);
-  const paginatedAgents = agents.slice(agentPage * AGENT_PAGE_SIZE, (agentPage + 1) * AGENT_PAGE_SIZE);
+  const filteredAgents = agents.filter(a => {
+    if (!agentSearch.trim()) return true;
+    const q = agentSearch.toLowerCase();
+    return a.name?.toLowerCase().includes(q) ||
+      a.email?.toLowerCase().includes(q) ||
+      (a.deviceId ?? '').toLowerCase().includes(q) ||
+      (a.phone ?? '').toLowerCase().includes(q);
+  });
+  const agentTotalPages = Math.ceil(filteredAgents.length / AGENT_PAGE_SIZE);
+  const paginatedAgents = filteredAgents.slice(agentPage * AGENT_PAGE_SIZE, (agentPage + 1) * AGENT_PAGE_SIZE);
 
   async function handleDeleteEnrollment(record: Enrollment): Promise<void> {
     if (!window.confirm(`Delete enrollment record for "${record.agentName}" on ${record.date}?`)) return;
@@ -236,19 +428,75 @@ export default function AdminPage({ user: _user }: Props) {
       await updateProfile(cred.user, { displayName: newName });
 
       if (newRole === 'AGGREGATOR') {
-        const counterRef = doc(db, 'counters', 'aggregatorId');
-        const aggId = await runTransaction(db, async (tx) => {
-          const snap = await tx.get(counterRef);
-          const next = snap.exists() ? (snap.data().lastSequence as number) + 1 : 1;
-          tx.set(counterRef, { lastSequence: next });
-          return formatAggregatorId(next);
-        });
+        // Create user document first (without aggregatorId)
         await setDoc(doc(db, 'users', cred.user.uid), {
           name: newName, email: newEmail, role: 'AGGREGATOR',
-          aggregatorId: aggId, phone: newPhone, createdAt: new Date().toISOString(),
+          phone: newPhone, createdAt: new Date().toISOString(),
         });
+
+        // Call backend API to assign aggregator ID
+        let aggId: string;
+        try {
+          const idToken = await _user.getIdToken();
+          
+          const response = await fetch(`${BACKEND_URL}/admin/assign-aggregator-id`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({ userId: cred.user.uid }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || errorData.details || 'Failed to assign aggregator ID');
+          }
+
+          const data = await response.json();
+          aggId = data.aggregatorId;
+
+          // Update Firestore with the assigned aggregator ID
+          await updateDoc(doc(db, 'users', cred.user.uid), {
+            aggregatorId: aggId,
+          });
+        } catch (apiError: any) {
+          // If API call fails, fall back to the old method
+          console.warn('Backend API call failed, using fallback method:', apiError.message);
+          const counterRef = doc(db, 'counters', 'aggregatorId');
+          aggId = await runTransaction(db, async (tx) => {
+            const snap = await tx.get(counterRef);
+            const next = snap.exists() ? (snap.data().lastSequence as number) + 1 : 1;
+            tx.set(counterRef, { lastSequence: next });
+            return formatAggregatorId(next);
+          });
+          await updateDoc(doc(db, 'users', cred.user.uid), {
+            aggregatorId: aggId,
+          });
+        }
+
         await secondaryAuth.signOut();
-        setAddSuccess(`"${newName}" created as AGGREGATOR. ID: ${aggId}`);
+        
+        // Create the new aggregator object with the assigned ID
+        const newAggregator: AggregatorUser = {
+          id: cred.user.uid,
+          name: newName,
+          email: newEmail,
+          role: 'AGGREGATOR',
+          phone: newPhone,
+          createdAt: new Date().toISOString(),
+          aggregatorId: aggId,
+          profileStateId: '',
+          profileStateName: '',
+          profileLgaId: '',
+          profileLgaName: '',
+        };
+        
+        // Optimistically update the local state
+        setAggregators(prev => [...prev, newAggregator]);
+        setAllAggregators(prev => [...prev, newAggregator]);
+        
+        setAddSuccess(`"${newName}" created as AGGREGATOR. Assigned ID: ${aggId}`);
       } else if (newRole === 'AGENT') {
         await setDoc(doc(db, 'users', cred.user.uid), {
           name: newName, email: newEmail, role: newRole,
@@ -676,8 +924,8 @@ export default function AdminPage({ user: _user }: Props) {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
                 <input type="tel" value={editPhone}
-                  onChange={e => setEditPhone(e.target.value.replace(/[^0-9+\-\s()]/g, '').slice(0, 15))}
-                  placeholder="+234 800 000 0000"
+                  onChange={e => setEditPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                  placeholder="08012345678"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
               </div>
               <div>
@@ -799,7 +1047,7 @@ export default function AdminPage({ user: _user }: Props) {
             <div className="font-black text-sm leading-tight">
               <span className="text-pink-300">2 PLUS </span><span className="text-teal-200">TECHNOLOGIES</span>
             </div>
-            <div className="text-teal-300 text-xs">NIMC Ward Enrollment · Admin</div>
+            <div className="text-teal-300 text-xs">Enrollment Portal · Admin</div>
           </div>
         </div>
         <button onClick={() => signOut(auth)} className="text-sm bg-teal-700 hover:bg-teal-600 px-3 py-1.5 rounded-lg">Logout</button>
@@ -1027,8 +1275,8 @@ export default function AdminPage({ user: _user }: Props) {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number <span className="text-gray-400">(optional)</span></label>
                     <input type="tel" value={newPhone}
-                      onChange={e => setNewPhone(e.target.value.replace(/[^0-9+\-\s()]/g, '').slice(0, 15))}
-                      placeholder="+234 800 000 0000" className={inputCls} />
+                      onChange={e => setNewPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                      placeholder="08012345678" className={inputCls} />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
@@ -1083,14 +1331,26 @@ export default function AdminPage({ user: _user }: Props) {
 
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200">
               <div className="p-5 border-b border-gray-100">
-                <h2 className="text-lg font-bold text-gray-800">Registered Agents</h2>
-                <p className="text-sm text-gray-500 mt-0.5">{agents.length} agent{agents.length !== 1 ? 's' : ''}</p>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-800">Registered Agents</h2>
+                    <p className="text-sm text-gray-500 mt-0.5">{filteredAgents.length} of {agents.length} agent{agents.length !== 1 ? 's' : ''}</p>
+                  </div>
+                </div>
+                <div className="relative">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input type="text" placeholder="Search by name, email, Device ID, or phone..." value={agentSearch}
+                    onChange={e => { setAgentSearch(e.target.value); setAgentPage(0); }}
+                    className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-gray-50" />
+                </div>
               </div>
-              {agents.length === 0 ? (
-                <div className="text-center py-16 text-gray-400">No agents registered yet.</div>
+              {filteredAgents.length === 0 ? (
+                <div className="text-center py-16 text-gray-400">{agentSearch ? 'No agents found matching your search.' : 'No agents registered yet.'}</div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                <div className="overflow-x-auto w-full">
+                  <table className="text-sm" style={{ minWidth: '1000px', width: '100%' }}>
                     <thead>
                       <tr className="bg-gray-50 border-b border-gray-100">
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Agent</th>
@@ -1098,8 +1358,8 @@ export default function AdminPage({ user: _user }: Props) {
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Phone</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Device ID</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Registered</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Aggregator</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider min-w-[160px]">Aggregator</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider min-w-[200px]">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -1140,26 +1400,24 @@ export default function AdminPage({ user: _user }: Props) {
                               </select>
                             </div>
                           </td>
-                          <td className="px-4 py-3.5">
-                            <div className="flex flex-col gap-1.5">
-                              <div className="flex gap-1.5">
-                                <button onClick={() => openEdit(a)}
-                                  className="text-xs text-teal-600 hover:text-teal-800 border border-teal-200 hover:border-teal-400 bg-teal-50 hover:bg-teal-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">
-                                  Edit
-                                </button>
-                                <button onClick={() => handlePasswordReset(a.id, a.email)}
-                                  className="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 bg-blue-50 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">
-                                  Reset Password
-                                </button>
-                                <button onClick={() => handleDeleteUser(a.id, a.name)}
-                                  className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 bg-red-50 hover:bg-red-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">
-                                  Delete
-                                </button>
-                              </div>
-                              {resetMsg[a.id] && (
-                                <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">{resetMsg[a.id]}</span>
-                              )}
+                          <td className="px-3 py-3.5">
+                            <div className="flex items-center gap-1 flex-nowrap">
+                              <button onClick={() => openEdit(a)}
+                                className="text-xs text-teal-600 hover:text-teal-800 border border-teal-200 hover:border-teal-400 bg-teal-50 hover:bg-teal-100 px-2 py-1 rounded transition-colors font-medium whitespace-nowrap">
+                                Edit
+                              </button>
+                              <button onClick={() => handlePasswordReset(a.id, a.email)}
+                                className="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded transition-colors font-medium whitespace-nowrap">
+                                Reset
+                              </button>
+                              <button onClick={() => handleDeleteUser(a.id, a.name)}
+                                className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition-colors font-medium whitespace-nowrap">
+                                Delete
+                              </button>
                             </div>
+                            {resetMsg[a.id] && (
+                              <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded mt-1 block">{resetMsg[a.id]}</span>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -1509,9 +1767,115 @@ export default function AdminPage({ user: _user }: Props) {
 
         {tab === 'aggregators' && (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200">
+            {/* Edit Aggregator Modal */}
+            {editAggregator && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+                  <h3 className="text-lg font-bold text-gray-800 mb-4">Edit Aggregator</h3>
+                  <form onSubmit={handleEditAggregatorSave} className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                      <input type="text" required value={editAggName} onChange={e => setEditAggName(e.target.value)}
+                        className={inputCls} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                      <input type="tel" value={editAggPhone}
+                        onChange={e => setEditAggPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                        placeholder="08012345678" className={inputCls} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                      <input type="text" value={editAggregator.email} disabled
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-400" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Aggregator ID</label>
+                      <input type="text" value={editAggregator.aggregatorId} disabled
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-400 font-mono" />
+                    </div>
+                    {editAggError && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{editAggError}</div>}
+                    <div className="flex gap-3 pt-2">
+                      <button type="submit" disabled={editAggSaving}
+                        className="flex-1 bg-teal-700 hover:bg-teal-800 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-60 text-sm">
+                        {editAggSaving ? 'Saving...' : 'Save Changes'}
+                      </button>
+                      <button type="button" onClick={() => setEditAggregator(null)}
+                        className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 rounded-lg transition-colors text-sm">
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
             <div className="p-5 border-b border-gray-100">
-              <h2 className="text-lg font-bold text-gray-800">Aggregators</h2>
-              <p className="text-sm text-gray-500 mt-0.5">{aggregators.length} aggregator{aggregators.length !== 1 ? 's' : ''}</p>
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-800">Aggregators</h2>
+                  <p className="text-sm text-gray-500 mt-0.5">{aggregators.length} aggregator{aggregators.length !== 1 ? 's' : ''}</p>
+                </div>
+                <button onClick={() => { setShowAddAggregator(!showAddAggregator); setAddAggError(''); setAddAggSuccess(''); }}
+                  className={`text-sm font-medium px-4 py-2 rounded-lg transition-colors ${showAddAggregator ? 'bg-gray-100 text-gray-600' : 'bg-teal-700 text-white hover:bg-teal-800'}`}>
+                  {showAddAggregator ? '✕ Cancel' : '+ Add Aggregator'}
+                </button>
+              </div>
+              {/* Invite Code Management */}
+              <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                <h3 className="text-sm font-semibold text-amber-800 mb-1">Aggregator Invite Code</h3>
+                <p className="text-xs text-amber-700 mb-3">Only people with this code can self-register as an aggregator. Share it only with genuine aggregators.</p>
+                <form onSubmit={handleSaveInviteCode} className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Current Code</label>
+                    <input type="text" value={inviteCodeInput} onChange={e => setInviteCodeInput(e.target.value)}
+                      placeholder="Set an invite code..."
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 font-mono" />
+                  </div>
+                  <button type="submit" disabled={savingInviteCode}
+                    className="bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-60 whitespace-nowrap">
+                    {savingInviteCode ? 'Saving...' : 'Save Code'}
+                  </button>
+                </form>
+                {inviteCode && <p className="text-xs text-amber-700 mt-2">Active code: <span className="font-mono font-bold">{inviteCode}</span></p>}
+                {!inviteCode && <p className="text-xs text-red-600 mt-2">⚠️ No invite code set — aggregator self-registration is currently disabled.</p>}
+                {inviteCodeMsg && <p className="text-xs text-green-700 mt-2">{inviteCodeMsg}</p>}
+              </div>
+              {showAddAggregator && (
+                <form onSubmit={handleAddAggregator} className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                    <input type="text" required value={addAggName} onChange={e => setAddAggName(e.target.value)} placeholder="Enter full name" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                    <input type="email" required value={addAggEmail} onChange={e => setAddAggEmail(e.target.value)} placeholder="aggregator@example.com" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <input type="password" required value={addAggPassword} onChange={e => setAddAggPassword(e.target.value)} placeholder="Min. 6 characters" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number <span className="text-gray-400">(optional)</span></label>
+                    <input type="tel" value={addAggPhone} onChange={e => setAddAggPhone(e.target.value.replace(/\D/g, '').slice(0, 11))} placeholder="08012345678" className={inputCls} />
+                  </div>
+                  <div className="sm:col-span-2">
+                    {addAggError && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2 mb-3">{addAggError}</div>}
+                    {addAggSuccess && <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-3 py-2 mb-3">{addAggSuccess}</div>}
+                    <button type="submit" disabled={addAggLoading}
+                      className="bg-teal-700 hover:bg-teal-800 text-white font-medium px-6 py-2.5 rounded-lg transition-colors disabled:opacity-60 text-sm">
+                      {addAggLoading ? 'Creating...' : 'Create Aggregator'}
+                    </button>
+                  </div>
+                </form>
+              )}
+              <div className="relative">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input type="text" placeholder="Search by name, email, or Aggregator ID..." value={aggregatorSearch}
+                  onChange={e => setAggregatorSearch(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-gray-50" />
+              </div>
             </div>
             {loadingAggregators ? (
               <div className="flex items-center justify-center py-16 text-gray-400">
@@ -1521,41 +1885,79 @@ export default function AdminPage({ user: _user }: Props) {
                 </svg>
                 Loading aggregators...
               </div>
-            ) : aggregators.length === 0 ? (
-              <div className="text-center py-16 text-gray-400">No aggregators registered yet.</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-50 border-b border-gray-100">
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Aggregator ID</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Phone</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {aggregators.map((agg, i) => (
-                      <tr key={agg.id} className={`hover:bg-teal-50 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
-                        <td className="px-4 py-3.5">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-sm">
-                              {agg.name?.charAt(0).toUpperCase()}
-                            </div>
-                            <span className="font-semibold text-gray-800">{agg.name}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3.5 text-gray-500">{agg.email}</td>
-                        <td className="px-4 py-3.5">
-                          <span className="font-mono text-xs bg-teal-50 text-teal-700 border border-teal-200 px-2 py-1 rounded">{agg.aggregatorId}</span>
-                        </td>
-                        <td className="px-4 py-3.5 text-gray-500 text-xs">{agg.phone || <span className="text-gray-300">—</span>}</td>
+            ) : (() => {
+              const filtered = aggregators.filter(a => {
+                const q = aggregatorSearch.toLowerCase();
+                return !q || a.name.toLowerCase().includes(q) || a.email.toLowerCase().includes(q) || a.aggregatorId.toLowerCase().includes(q);
+              });
+              if (filtered.length === 0) return <div className="text-center py-16 text-gray-400">{aggregatorSearch ? 'No aggregators found.' : 'No aggregators registered yet.'}</div>;
+              return (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-100">
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Aggregator ID</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Phone</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">State / LGA</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Office Address</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {filtered.map((agg, i) => (
+                        <tr key={agg.id} className={`hover:bg-teal-50 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                          <td className="px-4 py-3.5">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-sm">
+                                {agg.name?.charAt(0).toUpperCase()}
+                              </div>
+                              <span className="font-semibold text-gray-800">{agg.name}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3.5 text-gray-500">{agg.email}</td>
+                          <td className="px-4 py-3.5">
+                            <span className="font-mono text-xs bg-teal-50 text-teal-700 border border-teal-200 px-2 py-1 rounded">{agg.aggregatorId}</span>
+                          </td>
+                          <td className="px-4 py-3.5 text-gray-500 text-xs">{agg.phone || <span className="text-gray-300">—</span>}</td>
+                          <td className="px-4 py-3.5 text-gray-600 text-xs">
+                            {agg.profileStateName || <span className="text-gray-300">—</span>}
+                            {agg.profileLgaName && <span className="text-gray-400"> / {agg.profileLgaName}</span>}
+                          </td>
+                          <td className="px-4 py-3.5 text-gray-600 text-xs max-w-[180px]">
+                            {(agg as any).officeAddress
+                              ? <span title={(agg as any).officeAddress}>{(agg as any).officeAddress.length > 40 ? (agg as any).officeAddress.slice(0, 40) + '…' : (agg as any).officeAddress}</span>
+                              : <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <div className="flex flex-col gap-1.5">
+                              <div className="flex gap-1.5">
+                                <button onClick={() => openEditAggregator(agg)}
+                                  className="text-xs text-teal-600 hover:text-teal-800 border border-teal-200 hover:border-teal-400 bg-teal-50 hover:bg-teal-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">
+                                  Edit
+                                </button>
+                                <button onClick={() => handleAggregatorPasswordReset(agg.id, agg.email)}
+                                  className="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 bg-blue-50 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">
+                                  Reset Password
+                                </button>
+                                <button onClick={() => handleDeleteAggregator(agg.id, agg.name)}
+                                  className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 bg-red-50 hover:bg-red-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">
+                                  Delete
+                                </button>
+                              </div>
+                              {aggResetMsg[agg.id] && (
+                                <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">{aggResetMsg[agg.id]}</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>

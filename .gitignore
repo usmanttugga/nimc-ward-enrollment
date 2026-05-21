@@ -6,3 +6,6 @@ dist/
 *.log
 backend/dist/
 frontend/dist/
+serviceAccountKey.json
+serviceAccountKey.json.json
+firestore-backup*.json

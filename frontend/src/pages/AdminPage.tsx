@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { User, signOut, createUserWithEmailAndPassword, updateProfile, getAuth, sendPasswordResetEmail } from 'firebase/auth';
-import { collection, query, orderBy, getDocs, doc, setDoc, deleteDoc, updateDoc, addDoc, where, runTransaction, getDoc } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, doc, setDoc, deleteDoc, updateDoc, addDoc, where, getDoc } from 'firebase/firestore';
 import { loadGeoData, State } from '../geoData';
-import { formatAggregatorId, AggregatorUser } from '../aggregatorUtils';
+import { formatAggregatorId, AggregatorUser, findNextAvailableSequence } from '../aggregatorUtils';
 import { initializeApp } from 'firebase/app';
 import * as XLSX from 'xlsx';
 import { auth, db } from '../firebase';
 import Logo from '../components/Logo';
+import ChangePasswordForm from '../components/ChangePasswordForm';
+import SetPasswordModal from '../components/SetPasswordModal';
 import {
   filterAgentsByDeviceId,
   buildEnrollmentLogDocument,
@@ -15,9 +17,6 @@ import {
   sortEnrollmentLogs,
   EnrollmentLog,
 } from '../enrollmentLogUtils';
-
-// Backend API URL configuration
-const BACKEND_URL = import.meta.env?.VITE_BACKEND_URL || 'http://localhost:3000';
 
 interface Props { user: User; }
 interface Enrollment {
@@ -28,7 +27,7 @@ interface Enrollment {
 interface Agent { id: string; name: string; email: string; deviceId?: string; phone?: string; createdAt: string; accountNumber?: string; accountName?: string; bankName?: string; accountLocked?: boolean; aggregatorId?: string; }
 
 export default function AdminPage({ user: _user }: Props) {
-  const [tab, setTab] = useState<'enrollments' | 'agents' | 'enrollmentLog' | 'accountDetails' | 'aggregators'>('enrollments');
+  const [tab, setTab] = useState<'enrollments' | 'agents' | 'enrollmentLog' | 'accountDetails' | 'aggregators' | 'profile'>('enrollments');
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [search, setSearch] = useState('');
@@ -61,6 +60,11 @@ export default function AdminPage({ user: _user }: Props) {
   const [addAggEmail, setAddAggEmail] = useState('');
   const [addAggPassword, setAddAggPassword] = useState('');
   const [addAggPhone, setAddAggPhone] = useState('');
+  const [addAggStateId, setAddAggStateId] = useState('');
+  const [addAggStateName, setAddAggStateName] = useState('');
+  const [addAggLgaId, setAddAggLgaId] = useState('');
+  const [addAggLgaName, setAddAggLgaName] = useState('');
+  const [addAggOfficeAddress, setAddAggOfficeAddress] = useState('');
   const [addAggLoading, setAddAggLoading] = useState(false);
   const [addAggError, setAddAggError] = useState('');
   const [addAggSuccess, setAddAggSuccess] = useState('');
@@ -84,6 +88,8 @@ export default function AdminPage({ user: _user }: Props) {
   const [editPhone, setEditPhone] = useState('');
   const [editSaving, setEditSaving] = useState(false);
   const [resetMsg, setResetMsg] = useState<Record<string, string>>({});
+  const [setPasswordTarget, setSetPasswordTarget] = useState<{ uid: string; name: string; role: 'AGENT' | 'AGGREGATOR' } | null>(null);
+  const [setPasswordSuccessMsg, setSetPasswordSuccessMsg] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState('');
   const [page, setPage] = useState(0);
@@ -228,77 +234,27 @@ export default function AdminPage({ user: _user }: Props) {
       const secondaryAuth = getAuth(secondaryApp);
       const cred = await createUserWithEmailAndPassword(secondaryAuth, addAggEmail, addAggPassword);
       await updateProfile(cred.user, { displayName: addAggName });
-      
-      // Create user document first (without aggregatorId)
+
+      // Generate aggregator ID using gap-filling
+      const existingSnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'AGGREGATOR')));
+      const existingIds = existingSnap.docs.map(d => d.data().aggregatorId as string).filter(Boolean);
+      const aggId = formatAggregatorId(findNextAvailableSequence(existingIds));
+
       await setDoc(doc(db, 'users', cred.user.uid), {
         name: addAggName, email: addAggEmail, role: 'AGGREGATOR',
-        phone: addAggPhone, createdAt: new Date().toISOString(),
-      });
-
-      // Call backend API to assign aggregator ID
-      let aggId: string;
-      try {
-        const idToken = await _user.getIdToken();
-        
-        const response = await fetch(`${BACKEND_URL}/admin/assign-aggregator-id`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${idToken}`,
-          },
-          body: JSON.stringify({ userId: cred.user.uid }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || errorData.details || 'Failed to assign aggregator ID');
-        }
-
-        const data = await response.json();
-        aggId = data.aggregatorId;
-
-        // Update Firestore with the assigned aggregator ID
-        await updateDoc(doc(db, 'users', cred.user.uid), {
-          aggregatorId: aggId,
-        });
-      } catch (apiError: any) {
-        // If API call fails, fall back to the old method
-        console.warn('Backend API call failed, using fallback method:', apiError.message);
-        const counterRef = doc(db, 'counters', 'aggregatorId');
-        aggId = await runTransaction(db, async (tx) => {
-          const snap = await tx.get(counterRef);
-          const next = snap.exists() ? (snap.data().lastSequence as number) + 1 : 1;
-          tx.set(counterRef, { lastSequence: next });
-          return formatAggregatorId(next);
-        });
-        await updateDoc(doc(db, 'users', cred.user.uid), {
-          aggregatorId: aggId,
-        });
-      }
-
-      await secondaryAuth.signOut();
-      
-      // Create the new aggregator object with the assigned ID
-      const newAggregator: AggregatorUser = {
-        id: cred.user.uid,
-        name: addAggName,
-        email: addAggEmail,
-        role: 'AGGREGATOR',
-        phone: addAggPhone,
+        aggregatorId: aggId, phone: addAggPhone,
+        profileStateId: addAggStateId, profileStateName: addAggStateName,
+        profileLgaId: addAggLgaId, profileLgaName: addAggLgaName,
+        officeAddress: addAggOfficeAddress,
         createdAt: new Date().toISOString(),
-        aggregatorId: aggId,
-        profileStateId: '',
-        profileStateName: '',
-        profileLgaId: '',
-        profileLgaName: '',
-      };
-      
-      // Optimistically update the local state
-      setAggregators(prev => [...prev, newAggregator]);
-      setAllAggregators(prev => [...prev, newAggregator]);
-      
-      setAddAggSuccess(`"${addAggName}" created as AGGREGATOR. Assigned ID: ${aggId}`);
+      });
+      await secondaryAuth.signOut();
+      setAddAggSuccess(`"${addAggName}" created as AGGREGATOR. ID: ${aggId}`);
       setAddAggName(''); setAddAggEmail(''); setAddAggPassword(''); setAddAggPhone('');
+      setAddAggStateId(''); setAddAggStateName(''); setAddAggLgaId(''); setAddAggLgaName('');
+      setAddAggOfficeAddress('');
+      loadAggregators();
+      loadAllAggregators();
     } catch (err: any) {
       const msg: Record<string, string> = {
         'auth/email-already-in-use': 'Email already registered.',
@@ -428,75 +384,19 @@ export default function AdminPage({ user: _user }: Props) {
       await updateProfile(cred.user, { displayName: newName });
 
       if (newRole === 'AGGREGATOR') {
-        // Create user document first (without aggregatorId)
+        // Generate aggregator ID using gap-filling
+        const existingSnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'AGGREGATOR')));
+        const existingIds = existingSnap.docs.map(d => d.data().aggregatorId as string).filter(Boolean);
+        const aggId = formatAggregatorId(findNextAvailableSequence(existingIds));
+
         await setDoc(doc(db, 'users', cred.user.uid), {
           name: newName, email: newEmail, role: 'AGGREGATOR',
-          phone: newPhone, createdAt: new Date().toISOString(),
+          aggregatorId: aggId, phone: newPhone, createdAt: new Date().toISOString(),
         });
-
-        // Call backend API to assign aggregator ID
-        let aggId: string;
-        try {
-          const idToken = await _user.getIdToken();
-          
-          const response = await fetch(`${BACKEND_URL}/admin/assign-aggregator-id`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${idToken}`,
-            },
-            body: JSON.stringify({ userId: cred.user.uid }),
-          });
-
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || errorData.details || 'Failed to assign aggregator ID');
-          }
-
-          const data = await response.json();
-          aggId = data.aggregatorId;
-
-          // Update Firestore with the assigned aggregator ID
-          await updateDoc(doc(db, 'users', cred.user.uid), {
-            aggregatorId: aggId,
-          });
-        } catch (apiError: any) {
-          // If API call fails, fall back to the old method
-          console.warn('Backend API call failed, using fallback method:', apiError.message);
-          const counterRef = doc(db, 'counters', 'aggregatorId');
-          aggId = await runTransaction(db, async (tx) => {
-            const snap = await tx.get(counterRef);
-            const next = snap.exists() ? (snap.data().lastSequence as number) + 1 : 1;
-            tx.set(counterRef, { lastSequence: next });
-            return formatAggregatorId(next);
-          });
-          await updateDoc(doc(db, 'users', cred.user.uid), {
-            aggregatorId: aggId,
-          });
-        }
-
         await secondaryAuth.signOut();
-        
-        // Create the new aggregator object with the assigned ID
-        const newAggregator: AggregatorUser = {
-          id: cred.user.uid,
-          name: newName,
-          email: newEmail,
-          role: 'AGGREGATOR',
-          phone: newPhone,
-          createdAt: new Date().toISOString(),
-          aggregatorId: aggId,
-          profileStateId: '',
-          profileStateName: '',
-          profileLgaId: '',
-          profileLgaName: '',
-        };
-        
-        // Optimistically update the local state
-        setAggregators(prev => [...prev, newAggregator]);
-        setAllAggregators(prev => [...prev, newAggregator]);
-        
-        setAddSuccess(`"${newName}" created as AGGREGATOR. Assigned ID: ${aggId}`);
+        setAddSuccess(`"${newName}" created as AGGREGATOR. ID: ${aggId}`);
+        loadAggregators();
+        loadAllAggregators();
       } else if (newRole === 'AGENT') {
         await setDoc(doc(db, 'users', cred.user.uid), {
           name: newName, email: newEmail, role: newRole,
@@ -779,6 +679,37 @@ export default function AdminPage({ user: _user }: Props) {
     XLSX.writeFile(wb, fileName);
   }
 
+  function exportAgentsExcel() {
+    const today = new Date().toISOString().split('T')[0];
+    const fileName = `agents-${today}.xlsx`;
+    const wb = XLSX.utils.book_new();
+    const wsData: string[][] = [
+      ['S/No.', 'Agent Name', 'Email', 'Phone', 'Device ID', 'State', 'LGA', 'Aggregator ID', 'Aggregator Name', 'Registered'],
+      ...filteredAgents.map((a, i) => {
+        const agg = allAggregators.find(ag => ag.id === a.aggregatorId);
+        return [
+          String(i + 1),
+          a.name || '',
+          a.email || '',
+          a.phone || '',
+          a.deviceId || '',
+          (a as any).profileStateName || '',
+          (a as any).profileLgaName || '',
+          agg ? agg.aggregatorId : '',
+          agg ? agg.name : '',
+          a.createdAt ? new Date(a.createdAt).toLocaleDateString('en-NG', { dateStyle: 'medium' }) : '',
+        ];
+      }),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols'] = [
+      { wch: 6 }, { wch: 30 }, { wch: 30 }, { wch: 14 }, { wch: 22 },
+      { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 30 }, { wch: 18 },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, 'Agents');
+    XLSX.writeFile(wb, fileName);
+  }
+
   function exportExcel() {
     const reportDateRaw = dateFrom || new Date().toISOString().split('T')[0];
     const [yr, mo, dy] = reportDateRaw.split('-');
@@ -811,6 +742,28 @@ export default function AdminPage({ user: _user }: Props) {
 
   return (
     <div className="min-h-screen bg-gray-100">
+      {/* Set Password success toast */}
+      {setPasswordSuccessMsg && (
+        <div className="fixed top-4 right-4 z-50 bg-green-600 text-white text-sm font-medium px-4 py-3 rounded-xl shadow-lg flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          {setPasswordSuccessMsg}
+        </div>
+      )}
+      {/* Set Password Modal */}
+      {setPasswordTarget && (
+        <SetPasswordModal
+          target={setPasswordTarget}
+          adminUser={_user}
+          onClose={() => setSetPasswordTarget(null)}
+          onSuccess={(name) => {
+            setSetPasswordSuccessMsg(`Password updated successfully for ${name}.`);
+            setSetPasswordTarget(null);
+            setTimeout(() => setSetPasswordSuccessMsg(''), 5000);
+          }}
+        />
+      )}
       {/* Add Enrollment Log Modal */}
       {addLogAgent && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -1055,10 +1008,10 @@ export default function AdminPage({ user: _user }: Props) {
 
       <div className="max-w-7xl mx-auto p-4">
         <div className="flex flex-wrap gap-2 mb-5">
-          {(['enrollments', 'agents', 'enrollmentLog', 'accountDetails', 'aggregators'] as const).map(t => (
+          {(['enrollments', 'agents', 'enrollmentLog', 'accountDetails', 'aggregators', 'profile'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-5 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm ${tab === t ? 'bg-teal-700 text-white' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
-              {t === 'enrollments' ? '📋 Enrollment Records' : t === 'agents' ? '👥 Agents' : t === 'enrollmentLog' ? '📊 Enrollment Log' : t === 'accountDetails' ? '🏦 Account Details' : '👤 Aggregators'}
+              {t === 'enrollments' ? '📋 Enrollment Records' : t === 'agents' ? '👥 Agents' : t === 'enrollmentLog' ? '📊 Enrollment Log' : t === 'accountDetails' ? '🏦 Account Details' : t === 'aggregators' ? '👤 Aggregators' : '🔐 My Profile'}
             </button>
           ))}
         </div>
@@ -1265,16 +1218,16 @@ export default function AdminPage({ user: _user }: Props) {
                   </div>
                   {newRole !== 'AGGREGATOR' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Device ID <span className="text-gray-400">(optional)</span></label>
-                    <input type="text" value={newDeviceId} onChange={e => setNewDeviceId(e.target.value.slice(0, 20))}
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Device ID</label>
+                    <input type="text" required value={newDeviceId} onChange={e => setNewDeviceId(e.target.value.slice(0, 20))}
                       placeholder="HENA-315835789326461" maxLength={20}
                       className={inputCls + ' font-mono'} />
                     <p className="text-xs text-gray-400 mt-1">{newDeviceId.length}/20 characters</p>
                   </div>
                   )}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number <span className="text-gray-400">(optional)</span></label>
-                    <input type="tel" value={newPhone}
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                    <input type="tel" required value={newPhone}
                       onChange={e => setNewPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
                       placeholder="08012345678" className={inputCls} />
                   </div>
@@ -1336,6 +1289,13 @@ export default function AdminPage({ user: _user }: Props) {
                     <h2 className="text-lg font-bold text-gray-800">Registered Agents</h2>
                     <p className="text-sm text-gray-500 mt-0.5">{filteredAgents.length} of {agents.length} agent{agents.length !== 1 ? 's' : ''}</p>
                   </div>
+                  <button onClick={exportAgentsExcel}
+                    className="flex items-center gap-2 bg-teal-700 hover:bg-teal-800 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors shadow-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Export Excel
+                  </button>
                 </div>
                 <div className="relative">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1405,6 +1365,10 @@ export default function AdminPage({ user: _user }: Props) {
                               <button onClick={() => openEdit(a)}
                                 className="text-xs text-teal-600 hover:text-teal-800 border border-teal-200 hover:border-teal-400 bg-teal-50 hover:bg-teal-100 px-2 py-1 rounded transition-colors font-medium whitespace-nowrap">
                                 Edit
+                              </button>
+                              <button onClick={() => setSetPasswordTarget({ uid: a.id, name: a.name, role: 'AGENT' })}
+                                className="text-xs text-purple-600 hover:text-purple-800 border border-purple-200 hover:border-purple-400 bg-purple-50 hover:bg-purple-100 px-2 py-1 rounded transition-colors font-medium whitespace-nowrap">
+                                Set Password
                               </button>
                               <button onClick={() => handlePasswordReset(a.id, a.email)}
                                 className="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded transition-colors font-medium whitespace-nowrap">
@@ -1765,6 +1729,24 @@ export default function AdminPage({ user: _user }: Props) {
           </div>
         )}
 
+        {tab === 'profile' && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 max-w-lg">
+            <h2 className="text-lg font-bold text-gray-800 mb-1">My Profile</h2>
+            <p className="text-sm text-gray-500 mb-5">Update your admin account password.</p>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+              <input type="text" value={_user.displayName || ''} disabled
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-400 mb-4" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+              <input type="text" value={_user.email || ''} disabled
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-400 mb-4" />
+            </div>
+            <ChangePasswordForm user={_user} />
+          </div>
+        )}
+
         {tab === 'aggregators' && (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200">
             {/* Edit Aggregator Modal */}
@@ -1851,12 +1833,46 @@ export default function AdminPage({ user: _user }: Props) {
                     <input type="email" required value={addAggEmail} onChange={e => setAddAggEmail(e.target.value)} placeholder="aggregator@example.com" className={inputCls} />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                    <input type="password" required value={addAggPassword} onChange={e => setAddAggPassword(e.target.value)} placeholder="Min. 6 characters" className={inputCls} />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                    <input type="tel" required value={addAggPhone} onChange={e => setAddAggPhone(e.target.value.replace(/\D/g, '').slice(0, 11))} placeholder="08012345678" className={inputCls} />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number <span className="text-gray-400">(optional)</span></label>
-                    <input type="tel" value={addAggPhone} onChange={e => setAddAggPhone(e.target.value.replace(/\D/g, '').slice(0, 11))} placeholder="08012345678" className={inputCls} />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
+                    <select required value={addAggStateId}
+                      onChange={e => {
+                        const s = geoData.find(st => st.id === e.target.value);
+                        setAddAggStateId(e.target.value); setAddAggStateName(s?.name ?? '');
+                        setAddAggLgaId(''); setAddAggLgaName('');
+                      }}
+                      className={inputCls}>
+                      <option value="">-- Select State --</option>
+                      {geoData.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Local Government Area</label>
+                    <select required disabled={!addAggStateId} value={addAggLgaId}
+                      onChange={e => {
+                        const lgas = geoData.find(s => s.id === addAggStateId)?.lgas ?? [];
+                        const l = lgas.find(lg => lg.id === e.target.value);
+                        setAddAggLgaId(e.target.value); setAddAggLgaName(l?.name ?? '');
+                      }}
+                      className={inputCls + ' disabled:bg-gray-100'}>
+                      <option value="">-- Select LGA --</option>
+                      {(geoData.find(s => s.id === addAggStateId)?.lgas ?? []).map(l => (
+                        <option key={l.id} value={l.id}>{l.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Office Address</label>
+                    <textarea required value={addAggOfficeAddress} onChange={e => setAddAggOfficeAddress(e.target.value)}
+                      placeholder="Enter office address" rows={2}
+                      className={inputCls + ' resize-none'} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <input type="password" required value={addAggPassword} onChange={e => setAddAggPassword(e.target.value)} placeholder="Min. 6 characters" className={inputCls} />
                   </div>
                   <div className="sm:col-span-2">
                     {addAggError && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2 mb-3">{addAggError}</div>}
@@ -1936,6 +1952,10 @@ export default function AdminPage({ user: _user }: Props) {
                                 <button onClick={() => openEditAggregator(agg)}
                                   className="text-xs text-teal-600 hover:text-teal-800 border border-teal-200 hover:border-teal-400 bg-teal-50 hover:bg-teal-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">
                                   Edit
+                                </button>
+                                <button onClick={() => setSetPasswordTarget({ uid: agg.id, name: agg.name, role: 'AGGREGATOR' })}
+                                  className="text-xs text-purple-600 hover:text-purple-800 border border-purple-200 hover:border-purple-400 bg-purple-50 hover:bg-purple-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">
+                                  Set Password
                                 </button>
                                 <button onClick={() => handleAggregatorPasswordReset(agg.id, agg.email)}
                                   className="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 bg-blue-50 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">

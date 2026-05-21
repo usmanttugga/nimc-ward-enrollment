@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react';
 import { User, signOut } from 'firebase/auth';
-import { collection, query, where, getDocs, doc, getDoc, updateDoc, runTransaction } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import Logo from '../components/Logo';
 import { EnrollmentLog, formatMonthName, sortEnrollmentLogs } from '../enrollmentLogUtils';
 import {
   AgentUser,
-  filterUnlinkedAgents,
   chunkArray,
   scopeEnrollmentsByAgentUids,
   computeEnrollmentTotal,
 } from '../aggregatorUtils';
+import IdCardModal from '../components/IdCardModal';
+import ChangePasswordForm from '../components/ChangePasswordForm';
 
 interface Props { user: User; }
 
@@ -39,6 +40,9 @@ export default function AggregatorPage({ user }: Props) {
   const [profileName, setProfileName] = useState('');
   const [profileEmail, setProfileEmail] = useState('');
   const [_profilePhone, setProfilePhone] = useState('');
+  const [profileStateName, setProfileStateName] = useState('');
+  const [profileLgaName, setProfileLgaName] = useState('');
+  const [profileOfficeAddress, setProfileOfficeAddress] = useState('');
   const [linkSearch, setLinkSearch] = useState('');
   const [linkResults, setLinkResults] = useState<AgentUser[]>([]);
   const [linkSearching, setLinkSearching] = useState(false);
@@ -55,6 +59,7 @@ export default function AggregatorPage({ user }: Props) {
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState('');
   const [profileSuccess, setProfileSuccess] = useState('');
+  const [showIdCardModal, setShowIdCardModal] = useState(false);
 
   useEffect(() => {
     getDoc(doc(db, 'users', user.uid)).then(snap => {
@@ -64,6 +69,9 @@ export default function AggregatorPage({ user }: Props) {
         if (data.name) setProfileName(data.name);
         if (data.email) setProfileEmail(data.email);
         if (data.phone) { setProfilePhone(data.phone); setEditPhone(data.phone); }
+        if (data.profileStateName) setProfileStateName(data.profileStateName);
+        if (data.profileLgaName) setProfileLgaName(data.profileLgaName);
+        if (data.officeAddress) setProfileOfficeAddress(data.officeAddress);
       }
     });
     loadAgents();
@@ -141,7 +149,27 @@ export default function AggregatorPage({ user }: Props) {
       const q = query(collection(db, 'users'), where('role', '==', 'AGENT'));
       const snap = await getDocs(q);
       const allAgents = snap.docs.map(d => ({ id: d.id, ...d.data() } as AgentUser));
-      setLinkResults(filterUnlinkedAgents(allAgents, linkSearch));
+      // Filter to unlinked agents matching the Device ID search term.
+      // Rules:
+      // - Input must be exactly 15 digits (no partial matches)
+      // - Compare against the numeric part of the stored Device ID only
+      //   (strip "HENA-" prefix if present before comparing)
+      const unlinked = allAgents.filter(a => !a.aggregatorId);
+      const digits = linkSearch.trim().replace(/\D/g, ''); // keep only digits from input
+      if (digits.length !== 15) {
+        setLinkError('Please enter the full 15-digit Device ID to search.');
+        setLinkResults([]);
+        setLinkSearching(false);
+        return;
+      }
+      setLinkResults(
+        unlinked.filter(a => {
+          const stored = (a.deviceId ?? '').trim();
+          // Strip "HENA-" prefix (case-insensitive) if present, then compare digits only
+          const storedDigits = stored.replace(/^[A-Za-z]+-/i, '').replace(/\D/g, '');
+          return storedDigits === digits;
+        })
+      );
     } catch (err: any) {
       setLinkError('Search failed: ' + err.message);
     } finally {
@@ -153,21 +181,21 @@ export default function AggregatorPage({ user }: Props) {
     setLinkingId(agentId);
     setLinkError('');
     try {
-      await runTransaction(db, async (tx) => {
-        const agentRef = doc(db, 'users', agentId);
-        const snap = await tx.get(agentRef);
-        if (!snap.exists()) throw new Error('Agent not found.');
-        const data = snap.data();
-        if (data.aggregatorId) throw new Error('This agent is already linked to another aggregator.');
-        tx.update(agentRef, { aggregatorId: user.uid });
-      });
+      // Simple updateDoc — the Firestore security rule enforces exclusive ownership:
+      // it only allows writing aggregatorId when the field is currently unset/null/empty.
+      // If another aggregator already linked this agent, the rule will reject the write.
+      await updateDoc(doc(db, 'users', agentId), { aggregatorId: user.uid });
       const linked = linkResults.find(a => a.id === agentId);
       if (linked) {
         setMyAgents(prev => [{ ...linked, aggregatorId: user.uid }, ...prev]);
         setLinkResults(prev => prev.filter(a => a.id !== agentId));
       }
     } catch (err: any) {
-      setLinkError(err.message || 'Failed to link agent.');
+      if (err.code === 'permission-denied') {
+        setLinkError('This agent is already linked to another aggregator.');
+      } else {
+        setLinkError(err.message || 'Failed to link agent.');
+      }
     } finally {
       setLinkingId(null);
     }
@@ -205,7 +233,7 @@ export default function AggregatorPage({ user }: Props) {
               <span className="text-pink-300">2 PLUS </span>
               <span className="text-teal-200">TECHNOLOGIES</span>
             </div>
-            <div className="text-teal-300 text-xs">NIMC Ward Enrollment  {user.displayName || user.email}</div>
+            <div className="text-teal-300 text-xs">Enrollment Portal · {user.displayName || user.email}</div>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -285,13 +313,13 @@ export default function AggregatorPage({ user }: Props) {
         {tab === 'linkAgent' && (
           <div className="bg-white rounded-xl shadow p-6">
             <h2 className="text-lg font-semibold text-gray-800 mb-1">Link Agent</h2>
-            <p className="text-sm text-gray-500 mb-5">Search for registered agents by name, email, or Device ID and link them to your account.</p>
+            <p className="text-sm text-gray-500 mb-5">Enter the agent's 15-digit Device ID to search and link them to your account.</p>
             <form onSubmit={handleLinkSearch} className="flex gap-2 mb-4">
               <input
                 type="text"
                 value={linkSearch}
                 onChange={e => setLinkSearch(e.target.value)}
-                placeholder="Search by name, email, or Device ID..."
+                placeholder="Search by Device ID..."
                 className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
               />
               <button type="submit" disabled={linkSearching}
@@ -335,7 +363,7 @@ export default function AggregatorPage({ user }: Props) {
               </div>
             )}
             {!linkSearching && linkResults.length === 0 && linkSearch && (
-              <p className="text-gray-500 text-sm text-center py-6">No unlinked agents found matching your search.</p>
+              <p className="text-gray-500 text-sm text-center py-6">No unlinked agents found with that Device ID.</p>
             )}
           </div>
         )}
@@ -501,10 +529,38 @@ export default function AggregatorPage({ user }: Props) {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
                 <input type="tel" value={editPhone}
-                  onChange={e => setEditPhone(e.target.value.replace(/[^0-9+\-\s()]/g, '').slice(0, 15))}
-                  placeholder="+234 800 000 0000"
+                  onChange={e => setEditPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                  placeholder="08012345678"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
               </div>
+              {profileStateName && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
+                  <input type="text" value={profileStateName} disabled
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500" />
+                </div>
+              )}
+              {profileLgaName && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Local Government Area</label>
+                  <input type="text" value={profileLgaName} disabled
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500" />
+                </div>
+              )}
+              {profileOfficeAddress && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Office Address</label>
+                  <textarea value={profileOfficeAddress} disabled rows={2}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500 resize-none" />
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowIdCardModal(true)}
+                className="w-full bg-teal-700 hover:bg-teal-800 text-white font-medium py-2.5 rounded-lg transition-colors text-sm"
+              >
+                🪪 Download ID Card
+              </button>
               {profileError && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{profileError}</div>}
               {profileSuccess && <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-3 py-2">{profileSuccess}</div>}
               <button type="submit" disabled={profileSaving}
@@ -512,9 +568,18 @@ export default function AggregatorPage({ user }: Props) {
                 {profileSaving ? 'Saving...' : 'Save Profile'}
               </button>
             </form>
+            <ChangePasswordForm user={user} />
           </div>
         )}
       </div>
+      {showIdCardModal && (
+        <IdCardModal
+          user={user}
+          role="AGGREGATOR"
+          firestoreName={profileName}
+          onClose={() => setShowIdCardModal(false)}
+        />
+      )}
     </div>
   );
 }

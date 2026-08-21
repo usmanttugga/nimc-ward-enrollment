@@ -17,6 +17,7 @@ export interface AggregatorUser {
   profileStateName: string;
   profileLgaId: string;
   profileLgaName: string;
+  officeAddress?: string;
   createdAt: string;      // ISO 8601
 }
 
@@ -60,6 +61,54 @@ export interface AggregatorIdCounter {
  */
 export function formatAggregatorId(sequence: number): string {
   return `2PLUS/AGG/ENR/${String(sequence).padStart(3, '0')}`;
+}
+
+/**
+ * Parse the numeric sequence from a formatted Aggregator ID string.
+ * Returns null if the string is not a valid aggregator ID.
+ *
+ * @example
+ * parseAggregatorId("2PLUS/AGG/ENR/001") // 1
+ * parseAggregatorId("2PLUS/AGG/ENR/042") // 42
+ * parseAggregatorId("invalid")           // null
+ */
+export function parseAggregatorId(id: string): number | null {
+  if (!id) return null;
+  const match = id.match(/^2PLUS\/AGG\/ENR\/(\d+)$/);
+  if (!match) return null;
+  const n = parseInt(match[1], 10);
+  return isNaN(n) || n < 1 ? null : n;
+}
+
+/**
+ * Given a list of all existing aggregator ID strings, find the lowest
+ * available sequence number — filling gaps before going higher.
+ *
+ * Algorithm:
+ * 1. Parse all existing IDs to numeric values, ignoring invalid ones.
+ * 2. Find all gaps in [1..max].
+ * 3. If gaps exist, return the lowest gap.
+ * 4. Otherwise return max + 1 (or 1 if no aggregators exist yet).
+ *
+ * @param existingIds - Array of formatted aggregator ID strings currently in use.
+ * @returns The next available sequence number.
+ *
+ * @example
+ * // Existing: 004, 005, 008 → gaps are 1,2,3,6,7 → returns 1
+ * findNextAvailableSequence(["2PLUS/AGG/ENR/004","2PLUS/AGG/ENR/005","2PLUS/AGG/ENR/008"])
+ */
+export function findNextAvailableSequence(existingIds: string[]): number {
+  const assigned = new Set<number>();
+  for (const id of existingIds) {
+    const n = parseAggregatorId(id);
+    if (n !== null) assigned.add(n);
+  }
+  if (assigned.size === 0) return 1;
+  const max = Math.max(...assigned);
+  for (let i = 1; i <= max; i++) {
+    if (!assigned.has(i)) return i; // first gap
+  }
+  return max + 1; // no gaps, go sequential
 }
 
 /**

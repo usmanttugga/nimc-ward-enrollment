@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { validatePasswordChange } from '../utils/passwordValidation';
 
 // ---------------------------------------------------------------------------
@@ -9,7 +10,7 @@ import { validatePasswordChange } from '../utils/passwordValidation';
 interface SetPasswordModalProps {
   /** The target user whose password will be reset. */
   target: { uid: string; name: string; role: 'AGENT' | 'AGGREGATOR' };
-  /** The currently logged-in admin user — used to obtain a fresh ID token. */
+  /** The currently logged-in admin user (kept for API compatibility). */
   adminUser: User;
   /** Called when the modal should close (cancel, backdrop click, Escape, or after success). */
   onClose: () => void;
@@ -21,7 +22,7 @@ interface SetPasswordModalProps {
 // Component
 // ---------------------------------------------------------------------------
 
-export default function SetPasswordModal({ target, adminUser, onClose, onSuccess }: SetPasswordModalProps) {
+export default function SetPasswordModal({ target, onClose, onSuccess }: SetPasswordModalProps) {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -40,14 +41,14 @@ export default function SetPasswordModal({ target, adminUser, onClose, onSuccess
   }, [onClose]);
 
   // -------------------------------------------------------------------------
-  // Submit handler
+  // Submit handler — calls the Firebase Cloud Function `updateUserPassword`
   // -------------------------------------------------------------------------
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
 
-    // Client-side validation (Requirements 4.3, 4.4, 5.3, 5.4, 6.1, 6.2)
+    // Client-side validation
     const validation = validatePasswordChange(newPassword, confirmPassword);
     if (!validation.valid) {
       setError(validation.message ?? 'Invalid password.');
@@ -57,61 +58,32 @@ export default function SetPasswordModal({ target, adminUser, onClose, onSuccess
     setSubmitting(true);
 
     try {
-      // Get a fresh ID token (Requirement 7.3)
-      const idToken = await adminUser.getIdToken();
+      const functions = getFunctions();
+      const updateUserPassword = httpsCallable(functions, 'updateUserPassword');
+      await updateUserPassword({ uid: target.uid, newPassword });
 
-      const backendUrl = import.meta.env.VITE_BACKEND_URL ?? '';
-      const response = await fetch(`${backendUrl}/admin/reset-password`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({ uid: target.uid, newPassword }),
-      });
-
-      if (response.ok) {
-        // Requirements 4.9, 5.9
-        onSuccess(target.name);
-        onClose();
-        return;
+      onSuccess(target.name);
+      onClose();
+    } catch (err: any) {
+      // Firebase Functions errors have a `code` property
+      const code: string = err?.code ?? '';
+      const message: string = err?.message ?? '';
+      if (code === 'functions/unauthenticated') {
+        setError('Your session has expired. Please log in again.');
+      } else if (code === 'functions/permission-denied') {
+        setError('You are not authorized to perform this action.');
+      } else if (code === 'functions/not-found') {
+        setError('Account not found in Firebase.');
+      } else if (code === 'functions/invalid-argument') {
+        setError(message || 'Invalid password.');
+      } else if (code === 'functions/unavailable' || code === 'functions/internal') {
+        setError('The password reset service is temporarily unavailable. Please try again later.');
+      } else if (message.includes('not-found') || message.includes('404')) {
+        setError('Password reset service not deployed yet. Please contact the administrator.');
+      } else {
+        setError(`Error: ${code || 'unknown'} — ${message || 'Please try again.'}`);
       }
-
-      // Map HTTP error codes to user-facing messages
-      switch (response.status) {
-        case 401:
-          // Requirement 7.1
-          setError('Your session has expired. Please log in again.');
-          break;
-        case 403:
-          // Requirements 4.7, 5.7
-          setError('You are not authorized to perform this action.');
-          break;
-        case 404:
-          // Requirements 4.10, 5.10
-          setError('Account not found in Firebase.');
-          break;
-        case 422: {
-          // Requirement 6.3 — use the backend's error message
-          let message = 'Invalid password.';
-          try {
-            const body = await response.json();
-            if (body?.error) message = body.error;
-          } catch {
-            // ignore JSON parse errors
-          }
-          setError(message);
-          break;
-        }
-        default:
-          // Requirements 4.11, 5.11
-          setError('An unexpected error occurred. Please try again.');
-      }
-    } catch {
-      // Network or other unexpected error
-      setError('An unexpected error occurred. Please try again.');
     } finally {
-      // Requirement 7.5 — re-enable submit button after response
       setSubmitting(false);
     }
   }
@@ -191,7 +163,6 @@ export default function SetPasswordModal({ target, adminUser, onClose, onSuccess
             >
               {submitting ? (
                 <>
-                  {/* Spinner */}
                   <svg
                     className="animate-spin h-4 w-4 text-white"
                     xmlns="http://www.w3.org/2000/svg"

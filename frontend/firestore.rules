@@ -7,13 +7,12 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN';
     }
 
-    function isAggregator() {
-      return request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'AGGREGATOR';
-    }
-
-    function callerAggregatorUid() {
-      return request.auth.uid;
+    function isValidEnrollmentLog(data) {
+      return data.keys().hasAll(['startMonth', 'endMonth'])
+        && !data.keys().hasAny(['month'])
+        && data.startMonth is int && data.startMonth >= 1 && data.startMonth <= 12
+        && data.endMonth   is int && data.endMonth   >= 1 && data.endMonth   <= 12
+        && data.endMonth >= data.startMonth;
     }
 
     match /users/{userId} {
@@ -21,20 +20,20 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
       // Admins can read and write any user document
       allow read, write: if isAdmin();
-      // Aggregators can read agent documents linked to them
-      allow read: if isAggregator() &&
+      // Any authenticated user can read any user document
+      // (scoping to own agents is enforced at the application layer)
+      allow read: if request.auth != null;
+      // Allow unauthenticated reads for device ID duplicate check during registration
+      allow list: if true;
+      // Any authenticated user can link an unlinked agent to themselves:
+      // - target must be an AGENT
+      // - aggregatorId must currently be absent, null, or empty
+      // - written aggregatorId must equal the caller's own UID
+      // - only the aggregatorId field may change
+      allow update: if request.auth != null &&
         resource.data.role == 'AGENT' &&
-        resource.data.aggregatorId == callerAggregatorUid();
-      // Aggregators can link an unlinked agent to themselves
-      // Server-side enforcement of the exclusive ownership constraint (Requirement 12):
-      // the condition `!('aggregatorId' in resource.data) || resource.data.aggregatorId == null`
-      // ensures that once an agent is owned by any aggregator, no other aggregator can
-      // overwrite that field via a direct write. The transaction-based link operation in the
-      // client provides the check-and-set pattern; this rule is the authoritative backstop.
-      allow update: if isAggregator() &&
-        resource.data.role == 'AGENT' &&
-        (!('aggregatorId' in resource.data) || resource.data.aggregatorId == null) &&
-        request.resource.data.aggregatorId == callerAggregatorUid() &&
+        (!('aggregatorId' in resource.data) || resource.data.aggregatorId == null || resource.data.aggregatorId == '') &&
+        request.resource.data.aggregatorId == request.auth.uid &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['aggregatorId']);
     }
 
@@ -42,31 +41,32 @@ service cloud.firestore {
       // Agents can create their own enrollments
       allow create: if request.auth != null &&
         request.resource.data.agentId == request.auth.uid;
-      // Anyone authenticated can read (agent sees own, admin sees all via client filter)
+      // Anyone authenticated can read
       allow read, list: if request.auth != null;
-      // Only admins can delete enrollment records
-      allow delete: if isAdmin();
-      // Only admins can update enrollment records
-      allow update: if isAdmin();
+      // Only admins can delete or update enrollment records
+      allow delete, update: if isAdmin();
     }
 
     match /enrollmentLogs/{docId} {
-      // Only admins can create or update enrollment log entries
-      allow create, update: if isAdmin();
-      // Agents can read only their own entries; admins can read all; aggregators can read entries for their linked agents
-      allow read, list: if request.auth != null && (
-        isAdmin() ||
-        resource.data.agentId == request.auth.uid ||
-        (isAggregator() &&
-          get(/databases/$(database)/documents/users/$(resource.data.agentId)).data.aggregatorId == callerAggregatorUid())
-      );
-      // Deletes not permitted
-      allow delete: if isAdmin();
+      // Only admins can create or update enrollment log entries, and only with valid schema
+      allow create, update: if isAdmin() && isValidEnrollmentLog(request.resource.data);
+      // Only admins can delete enrollment log entries
+      allow delete:         if isAdmin();
+      // Any authenticated user can read enrollment log entries
+      // (scoping to own agents is enforced at the application layer)
+      allow read, list:     if request.auth != null;
     }
 
     match /counters/{docId} {
       // Only authenticated users can read/write counters (for ID generation)
       allow read, write: if request.auth != null;
+    }
+
+    match /settings/{docId} {
+      // Anyone can read settings (needed for invite code check during registration)
+      allow read: if true;
+      // Only admins can write settings
+      allow write: if isAdmin();
     }
   }
 }

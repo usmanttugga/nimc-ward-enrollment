@@ -13,7 +13,7 @@ import {
   filterAgentsByDeviceId,
   buildEnrollmentLogDocument,
   buildEnrollmentLogPatch,
-  formatMonthName,
+  formatMonthRange,
   sortEnrollmentLogs,
   EnrollmentLog,
 } from '../enrollmentLogUtils';
@@ -112,7 +112,8 @@ export default function AdminPage({ user: _user }: Props) {
   const ENROLLMENT_LOG_PAGE_SIZE = 20;
   // Add Log Form
   const [addLogAgent, setAddLogAgent] = useState<Agent | null>(null);
-  const [addLogMonth, setAddLogMonth] = useState('1');
+  const [addLogStartMonth, setAddLogStartMonth] = useState('1');
+  const [addLogEndMonth, setAddLogEndMonth] = useState('1');
   const [addLogYear, setAddLogYear] = useState(String(new Date().getFullYear()));
   const [addLogTotal, setAddLogTotal] = useState('');
   const [addLogSaving, setAddLogSaving] = useState(false);
@@ -120,7 +121,8 @@ export default function AdminPage({ user: _user }: Props) {
   const [addLogSuccess, setAddLogSuccess] = useState('');
   // Edit Log Form
   const [editLog, setEditLog] = useState<EnrollmentLog | null>(null);
-  const [editLogMonth, setEditLogMonth] = useState('1');
+  const [editLogStartMonth, setEditLogStartMonth] = useState('1');
+  const [editLogEndMonth, setEditLogEndMonth] = useState('1');
   const [editLogYear, setEditLogYear] = useState('');
   const [editLogTotal, setEditLogTotal] = useState('');
   const [editLogSaving, setEditLogSaving] = useState(false);
@@ -517,7 +519,7 @@ export default function AdminPage({ user: _user }: Props) {
 
   function openAddLog(agent: Agent) {
     setAddLogAgent(agent);
-    setAddLogMonth('1');
+    setAddLogStartMonth('1'); setAddLogEndMonth('1');
     setAddLogYear(String(new Date().getFullYear()));
     setAddLogTotal('');
     setAddLogError('');
@@ -530,10 +532,16 @@ export default function AdminPage({ user: _user }: Props) {
     setAddLogSaving(true);
     setAddLogError('');
     try {
+      if (Number(addLogStartMonth) > Number(addLogEndMonth)) {
+        setAddLogError('End Month must be greater than or equal to Start Month.');
+        setAddLogSaving(false);
+        return;
+      }
       const payload = buildEnrollmentLogDocument({
         agentId: addLogAgent.id,
         agentName: addLogAgent.name,
-        month: Number(addLogMonth),
+        startMonth: Number(addLogStartMonth),
+        endMonth: Number(addLogEndMonth),
         year: Number(addLogYear),
         totalEnrollment: Number(addLogTotal),
         adminUid: _user.uid,
@@ -555,7 +563,11 @@ export default function AdminPage({ user: _user }: Props) {
 
   function openEditLog(log: EnrollmentLog) {
     setEditLog(log);
-    setEditLogMonth(String(log.month));
+    const legacyMonth = (log as any).month as number | undefined;
+    const initialStart = log.startMonth ?? legacyMonth ?? 1;
+    const initialEnd   = log.endMonth   ?? legacyMonth ?? 1;
+    setEditLogStartMonth(String(initialStart));
+    setEditLogEndMonth(String(initialEnd));
     setEditLogYear(String(log.year));
     setEditLogTotal(String(log.totalEnrollment));
     setEditLogError('');
@@ -567,8 +579,14 @@ export default function AdminPage({ user: _user }: Props) {
     setEditLogSaving(true);
     setEditLogError('');
     try {
+      if (Number(editLogStartMonth) > Number(editLogEndMonth)) {
+        setEditLogError('End Month must be greater than or equal to Start Month.');
+        setEditLogSaving(false);
+        return;
+      }
       const patch = buildEnrollmentLogPatch({
-        month: Number(editLogMonth),
+        startMonth: Number(editLogStartMonth),
+        endMonth: Number(editLogEndMonth),
         year: Number(editLogYear),
         totalEnrollment: Number(editLogTotal),
       });
@@ -589,7 +607,7 @@ export default function AdminPage({ user: _user }: Props) {
   }
 
   async function handleDeleteLog(log: EnrollmentLog) {
-    if (!window.confirm(`Delete the ${formatMonthName(log.month)} ${log.year} log entry for "${log.agentName}"?`)) return;
+    if (!window.confirm(`Delete the ${formatMonthRange(log.startMonth, log.endMonth, log.year)} log entry for "${log.agentName}"?`)) return;
     try {
       await deleteDoc(doc(db, 'enrollmentLogs', log.id));
       setEnrollmentLogsByAgent(prev => ({
@@ -773,20 +791,44 @@ export default function AdminPage({ user: _user }: Props) {
             <form onSubmit={handleAddLogSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Month</label>
-                  <select required value={addLogMonth} onChange={e => setAddLogMonth(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500">
-                    {Array.from({ length: 12 }, (_, i) => (
-                      <option key={i + 1} value={i + 1}>{formatMonthName(i + 1)}</option>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Start Month</label>
+                  <select
+                    value={addLogStartMonth}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setAddLogStartMonth(val);
+                      if (Number(val) > Number(addLogEndMonth)) {
+                        setAddLogEndMonth(val);
+                      }
+                    }}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  >
+                    {['January','February','March','April','May','June','July','August','September','October','November','December'].map((name, idx) => (
+                      <option key={idx + 1} value={String(idx + 1)}>{name}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
-                  <input type="number" required min="2000" max="2100" value={addLogYear}
-                    onChange={e => setAddLogYear(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">End Month</label>
+                  <select
+                    value={addLogEndMonth}
+                    onChange={e => setAddLogEndMonth(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  >
+                    {['January','February','March','April','May','June','July','August','September','October','November','December']
+                      .map((name, idx) => ({ name, value: idx + 1 }))
+                      .filter(({ value }) => value >= Number(addLogStartMonth))
+                      .map(({ name, value }) => (
+                        <option key={value} value={String(value)}>{name}</option>
+                      ))}
+                  </select>
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
+                <input type="number" required min="2000" max="2100" value={addLogYear}
+                  onChange={e => setAddLogYear(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Total Enrollment</label>
@@ -820,20 +862,44 @@ export default function AdminPage({ user: _user }: Props) {
             <form onSubmit={handleEditLogSave} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Month</label>
-                  <select required value={editLogMonth} onChange={e => setEditLogMonth(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500">
-                    {Array.from({ length: 12 }, (_, i) => (
-                      <option key={i + 1} value={i + 1}>{formatMonthName(i + 1)}</option>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Start Month</label>
+                  <select
+                    value={editLogStartMonth}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setEditLogStartMonth(val);
+                      if (Number(val) > Number(editLogEndMonth)) {
+                        setEditLogEndMonth(val);
+                      }
+                    }}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  >
+                    {['January','February','March','April','May','June','July','August','September','October','November','December'].map((name, idx) => (
+                      <option key={idx + 1} value={String(idx + 1)}>{name}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
-                  <input type="number" required min="2000" max="2100" value={editLogYear}
-                    onChange={e => setEditLogYear(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">End Month</label>
+                  <select
+                    value={editLogEndMonth}
+                    onChange={e => setEditLogEndMonth(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  >
+                    {['January','February','March','April','May','June','July','August','September','October','November','December']
+                      .map((name, idx) => ({ name, value: idx + 1 }))
+                      .filter(({ value }) => value >= Number(editLogStartMonth))
+                      .map(({ name, value }) => (
+                        <option key={value} value={String(value)}>{name}</option>
+                      ))}
+                  </select>
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
+                <input type="number" required min="2000" max="2100" value={editLogYear}
+                  onChange={e => setEditLogYear(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Total Enrollment</label>
@@ -1516,8 +1582,7 @@ export default function AdminPage({ user: _user }: Props) {
                                   <tbody className="divide-y divide-gray-100">
                                     {logs.map(log => (
                                       <tr key={log.id} className="bg-white hover:bg-teal-50 transition-colors">
-                                        <td className="px-4 py-3 font-medium text-gray-700">{formatMonthName(log.month)}</td>
-                                        <td className="px-4 py-3 text-gray-600">{log.year}</td>
+                                        <td className="px-4 py-3 font-medium text-gray-700">{formatMonthRange(log.startMonth, log.endMonth, log.year)}</td>
                                         <td className="px-4 py-3 text-right">
                                           <span className="inline-flex items-center justify-center bg-teal-100 text-teal-800 font-bold text-sm px-3 py-1 rounded-full">
                                             {log.totalEnrollment.toLocaleString()}

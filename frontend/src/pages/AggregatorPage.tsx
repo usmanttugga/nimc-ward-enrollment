@@ -3,7 +3,7 @@ import { User, signOut } from 'firebase/auth';
 import { collection, query, where, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import Logo from '../components/Logo';
-import { EnrollmentLog, formatMonthName, sortEnrollmentLogs } from '../enrollmentLogUtils';
+import { EnrollmentLog, formatMonthRange, sortEnrollmentLogs } from '../enrollmentLogUtils';
 import {
   AgentUser,
   chunkArray,
@@ -473,8 +473,7 @@ export default function AggregatorPage({ user }: Props) {
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-100">
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Agent Name</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Month</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Year</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Period</th>
                       <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Enrollment</th>
                     </tr>
                   </thead>
@@ -482,8 +481,7 @@ export default function AggregatorPage({ user }: Props) {
                     {enrollmentLogs.map((log, i) => (
                       <tr key={log.id} className={(i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50') + ' hover:bg-teal-50 transition-colors'}>
                         <td className="px-4 py-3.5 font-medium text-gray-800">{log.agentName}</td>
-                        <td className="px-4 py-3.5 text-gray-700">{formatMonthName(log.month)}</td>
-                        <td className="px-4 py-3.5 text-gray-600">{log.year}</td>
+                        <td className="px-4 py-3.5 text-gray-700">{formatMonthRange(log.startMonth, log.endMonth, log.year)}</td>
                         <td className="px-4 py-3.5 text-right">
                           <span className="inline-flex items-center justify-center bg-teal-100 text-teal-800 font-bold text-sm px-3 py-1 rounded-full">
                             {log.totalEnrollment.toLocaleString()}

@@ -16,6 +16,14 @@
         { "fieldPath": "year", "order": "DESCENDING" },
         { "fieldPath": "month", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "personalizationRecords",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "agentId", "order": "ASCENDING" },
+        { "fieldPath": "personalizationDate", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

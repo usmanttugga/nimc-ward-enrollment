@@ -6,6 +6,7 @@ import { auth, db } from '../firebase';
 import { loadGeoData, State } from '../geoData';
 import Logo from '../components/Logo';
 import { EnrollmentLog, formatMonthRange, sortEnrollmentLogs } from '../enrollmentLogUtils';
+import { PersonalizationRecord, buildPersonalizationDocument, validatePersonalizationDate, validatePersonalizationCount, sortPersonalizationRecords } from '../personalizationUtils';
 import IdCardModal from '../components/IdCardModal';
 import ChangePasswordForm from '../components/ChangePasswordForm';
 
@@ -24,7 +25,7 @@ interface Record {
 }
 
 export default function AgentPage({ user }: Props) {
-  const [tab, setTab] = useState<'form' | 'history' | 'profile' | 'enrollmentLog' | 'accountDetails' | 'introLetter'>('form');
+  const [tab, setTab] = useState<'form' | 'history' | 'profile' | 'enrollmentLog' | 'personalizationRecords' | 'accountDetails' | 'introLetter'>('form');
   const [showIdCardModal, setShowIdCardModal] = useState(false);
   // Introduction Letter
   const [letterDear, setLetterDear] = useState('');
@@ -83,6 +84,15 @@ export default function AgentPage({ user }: Props) {
   const [enrollmentLogs, setEnrollmentLogs] = useState<EnrollmentLog[]>([]);
   const [loadingEnrollmentLogs, setLoadingEnrollmentLogs] = useState(false);
 
+  const [personalizationRecords, setPersonalizationRecords] = useState<PersonalizationRecord[]>([]);
+  const [loadingPersonalization, setLoadingPersonalization] = useState(false);
+  const [personalizationError, setPersonalizationError] = useState('');
+  const [persDate, setPersDate] = useState('');
+  const [persCount, setPersCount] = useState('');
+  const [persSubmitting, setPersSubmitting] = useState(false);
+  const [persSuccess, setPersSuccess] = useState('');
+  const [persFormError, setPersFormError] = useState('');
+
   const selectedState = geoData.find(s => s.id === stateId);
   const selectedLga = selectedState?.lgas.find(l => l.id === lgaId);
   const wards = selectedLga?.wards ?? [];
@@ -90,6 +100,7 @@ export default function AgentPage({ user }: Props) {
   useEffect(() => {
     if (tab === 'history') loadHistory();
     if (tab === 'enrollmentLog') loadEnrollmentLogs();
+    if (tab === 'personalizationRecords') loadPersonalizationRecords();
   }, [tab]);
 
   async function loadHistory() {
@@ -125,6 +136,70 @@ export default function AgentPage({ user }: Props) {
       console.error('Failed to load enrollment logs:', err);
     } finally {
       setLoadingEnrollmentLogs(false);
+    }
+  }
+
+  async function loadPersonalizationRecords() {
+    setLoadingPersonalization(true);
+    setPersonalizationError('');
+    try {
+      const q = query(
+        collection(db, 'personalizationRecords'),
+        where('agentId', '==', user.uid)
+      );
+      const snap = await getDocs(q);
+      const records = snap.docs.map(d => ({ id: d.id, ...d.data() } as PersonalizationRecord));
+      // Sort client-side — avoids needing a composite Firestore index (same pattern as enrollment history)
+      setPersonalizationRecords(sortPersonalizationRecords(records));
+    } catch {
+      setPersonalizationError('Could not load your records. Please refresh.');
+      setPersonalizationRecords([]);
+    } finally {
+      setLoadingPersonalization(false);
+    }
+  }
+
+  async function handlePersonalizationSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setPersFormError('');
+    setPersSuccess('');
+
+    if (!validatePersonalizationDate(persDate)) {
+      setPersFormError('Please enter a valid date.');
+      return;
+    }
+
+    const parsedCount = parseInt(persCount, 10);
+    if (!validatePersonalizationCount(parsedCount)) {
+      setPersFormError('Please enter a valid number (0–9999).');
+      return;
+    }
+
+    // Duplicate-date check against already-loaded records (avoids needing a composite Firestore index)
+    const duplicate = personalizationRecords.some(r => r.personalizationDate === persDate);
+    if (duplicate) {
+      setPersFormError('A record for this date already exists.');
+      return;
+    }
+
+    setPersSubmitting(true);
+    try {
+      const payload = buildPersonalizationDocument({
+        agentId: user.uid,
+        agentName: user.displayName || user.email || '',
+        personalizationDate: persDate,
+        count: parsedCount,
+      });
+      const ref = await addDoc(collection(db, 'personalizationRecords'), payload);
+      const newRecord: PersonalizationRecord = { id: ref.id, ...payload };
+      setPersonalizationRecords(prev => sortPersonalizationRecords([...prev, newRecord]));
+      setPersSuccess('Record saved successfully.');
+      setPersDate('');
+      setPersCount('');
+    } catch {
+      setPersFormError('Failed to save record. Please try again.');
+    } finally {
+      setPersSubmitting(false);
     }
   }
 
@@ -300,10 +375,10 @@ export default function AgentPage({ user }: Props) {
 
       <div className="max-w-2xl mx-auto p-4">
         <div className="flex flex-wrap gap-2 mb-4">
-          {(['form', 'history', 'profile', 'enrollmentLog', 'accountDetails', 'introLetter'] as const).map(t => (
+          {(['form', 'history', 'profile', 'enrollmentLog', 'personalizationRecords', 'accountDetails', 'introLetter'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === t ? 'bg-teal-700 text-white' : 'bg-white text-gray-600 border'}`}>
-              {t === 'form' ? 'Submit Enrollment' : t === 'history' ? 'My Submissions' : t === 'profile' ? 'My Profile' : t === 'enrollmentLog' ? '📊 Enrollment Log' : t === 'accountDetails' ? '🏦 Account Details' : '📄 Intro Letter'}
+              {t === 'form' ? 'Submit Enrollment' : t === 'history' ? 'My Submissions' : t === 'profile' ? 'My Profile' : t === 'enrollmentLog' ? '📊 Enrollment Log' : t === 'personalizationRecords' ? '🎯 Personalization Records' : t === 'accountDetails' ? '🏦 Account Details' : '📄 Intro Letter'}
             </button>
           ))}
         </div>
@@ -583,6 +658,85 @@ export default function AgentPage({ user }: Props) {
                         <td className="px-4 py-3.5 text-right">
                           <span className="inline-flex items-center justify-center bg-teal-100 text-teal-800 font-bold text-sm px-3 py-1 rounded-full">
                             {log.totalEnrollment.toLocaleString()}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+        {tab === 'personalizationRecords' && (
+          <div className="bg-white rounded-xl shadow p-6">
+            <h2 className="text-lg font-semibold text-gray-800 mb-1">🎯 Personalization Records</h2>
+            <p className="text-sm text-gray-500 mb-5">Record the number of personalizations you received on a given date.</p>
+
+            {/* Submission form */}
+            <form onSubmit={handlePersonalizationSubmit} className="space-y-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date Received <span className="text-red-500">*</span></label>
+                <input
+                  type="date"
+                  value={persDate}
+                  onChange={e => { setPersDate(e.target.value); setPersFormError(''); setPersSuccess(''); }}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Number of Personalizations <span className="text-red-500">*</span></label>
+                <input
+                  type="number"
+                  min="0"
+                  max="9999"
+                  value={persCount}
+                  onChange={e => { setPersCount(e.target.value); setPersFormError(''); setPersSuccess(''); }}
+                  placeholder="Enter count (0–9999)"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+              {persFormError && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{persFormError}</div>}
+              {persSuccess && <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-3 py-2">{persSuccess}</div>}
+              <button
+                type="submit"
+                disabled={persSubmitting}
+                className="w-full bg-teal-700 hover:bg-teal-800 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-60 text-sm"
+              >
+                {persSubmitting ? 'Saving…' : 'Submit Personalization Record'}
+              </button>
+            </form>
+
+            {/* Records table */}
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">My Personalization Records</h3>
+            {loadingPersonalization ? (
+              <div className="flex items-center justify-center py-10 text-gray-400 gap-2">
+                <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                Loading…
+              </div>
+            ) : personalizationError ? (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{personalizationError}</div>
+            ) : personalizationRecords.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-8">No personalization records submitted yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-100">
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Count</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {personalizationRecords.map((r, i) => (
+                      <tr key={r.id} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-teal-50 transition-colors`}>
+                        <td className="px-4 py-3 font-medium text-gray-700">{r.personalizationDate}</td>
+                        <td className="px-4 py-3 text-right">
+                          <span className="inline-flex items-center justify-center bg-teal-100 text-teal-800 font-bold text-sm px-3 py-1 rounded-full">
+                            {r.count.toLocaleString()}
                           </span>
                         </td>
                       </tr>

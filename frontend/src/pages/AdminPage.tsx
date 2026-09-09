@@ -17,6 +17,14 @@ import {
   sortEnrollmentLogs,
   EnrollmentLog,
 } from '../enrollmentLogUtils';
+import {
+  PersonalizationRecord,
+  buildPersonalizationPatch,
+  validatePersonalizationDate,
+  validatePersonalizationCount,
+  sortPersonalizationRecords,
+  computeGrandTotal,
+} from '../personalizationUtils';
 
 interface Props { user: User; }
 interface Enrollment {
@@ -27,7 +35,7 @@ interface Enrollment {
 interface Agent { id: string; name: string; email: string; deviceId?: string; phone?: string; createdAt: string; accountNumber?: string; accountName?: string; bankName?: string; accountLocked?: boolean; aggregatorId?: string; }
 
 export default function AdminPage({ user: _user }: Props) {
-  const [tab, setTab] = useState<'enrollments' | 'agents' | 'enrollmentLog' | 'accountDetails' | 'aggregators' | 'profile'>('enrollments');
+  const [tab, setTab] = useState<'enrollments' | 'agents' | 'enrollmentLog' | 'personalizationRecords' | 'accountDetails' | 'aggregators' | 'profile'>('enrollments');
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [search, setSearch] = useState('');
@@ -127,6 +135,17 @@ export default function AdminPage({ user: _user }: Props) {
   const [editLogTotal, setEditLogTotal] = useState('');
   const [editLogSaving, setEditLogSaving] = useState(false);
   const [editLogError, setEditLogError] = useState('');
+
+  // --- Personalization Records admin state ---
+  const [adminPersRecords, setAdminPersRecords] = useState<PersonalizationRecord[]>([]);
+  const [loadingAdminPers, setLoadingAdminPers] = useState(false);
+  const [adminPersError, setAdminPersError] = useState('');
+  const [editPersRecord, setEditPersRecord] = useState<PersonalizationRecord | null>(null);
+  const [editPersDate, setEditPersDate] = useState('');
+  const [editPersCount, setEditPersCount] = useState('');
+  const [editPersSaving, setEditPersSaving] = useState(false);
+  const [editPersError, setEditPersError] = useState('');
+  const [deletingPersId, setDeletingPersId] = useState<string | null>(null);
 
   // --- Account Details tab state ---
   const [accountAgents, setAccountAgents] = useState<Agent[]>([]);
@@ -307,6 +326,7 @@ export default function AdminPage({ user: _user }: Props) {
       if (tab === 'aggregators') loadAggregators();
       if (tab === 'agents') { loadAgents(); loadAllAggregators(); }
       else if (agents.length === 0) loadAgents();
+      if (tab === 'personalizationRecords') loadAdminPersonalizationRecords();
       setLoading(false);
     }
   }, [tab]);
@@ -506,6 +526,21 @@ export default function AdminPage({ user: _user }: Props) {
     }
   }
 
+  // --- Personalization Records admin functions ---
+  async function loadAdminPersonalizationRecords() {
+    setLoadingAdminPers(true);
+    setAdminPersError('');
+    try {
+      const snap = await getDocs(collection(db, 'personalizationRecords'));
+      const records = snap.docs.map(d => ({ id: d.id, ...d.data() } as PersonalizationRecord));
+      setAdminPersRecords(sortPersonalizationRecords(records));
+    } catch (_err: any) {
+      setAdminPersError('Failed to load records.');
+    } finally {
+      setLoadingAdminPers(false);
+    }
+  }
+
   function toggleAgentExpand(agentId: string) {
     if (expandedAgentId === agentId) {
       setExpandedAgentId(null);
@@ -616,6 +651,59 @@ export default function AdminPage({ user: _user }: Props) {
       }));
     } catch (err: any) {
       alert('Failed to delete log entry: ' + err.message);
+    }
+  }
+
+  // --- Personalization Records edit/delete functions ---
+  function openEditPersRecord(record: PersonalizationRecord) {
+    setEditPersRecord(record);
+    setEditPersDate(record.personalizationDate);
+    setEditPersCount(String(record.count));
+    setEditPersError('');
+  }
+
+  async function handleEditPersSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editPersRecord) return;
+
+    if (!validatePersonalizationDate(editPersDate)) {
+      setEditPersError('Please enter a valid date.');
+      return;
+    }
+    const parsedCount = parseInt(editPersCount, 10);
+    if (!validatePersonalizationCount(parsedCount, 999999)) {
+      setEditPersError('Please enter a valid number (0–999999).');
+      return;
+    }
+
+    setEditPersSaving(true);
+    setEditPersError('');
+    try {
+      const patch = buildPersonalizationPatch({ personalizationDate: editPersDate, count: parsedCount });
+      await updateDoc(doc(db, 'personalizationRecords', editPersRecord.id), patch as unknown as Record<string, unknown>);
+      setAdminPersRecords(prev =>
+        sortPersonalizationRecords(
+          prev.map(r => r.id === editPersRecord!.id ? { ...r, personalizationDate: editPersDate, count: parsedCount } : r)
+        )
+      );
+      setEditPersRecord(null);
+    } catch {
+      setEditPersError('Failed to update record. Please try again.');
+    } finally {
+      setEditPersSaving(false);
+    }
+  }
+
+  async function handleDeletePersRecord(record: PersonalizationRecord) {
+    if (!window.confirm(`Delete personalization record for ${record.personalizationDate} (count: ${record.count})? This cannot be undone.`)) return;
+    setDeletingPersId(record.id);
+    try {
+      await deleteDoc(doc(db, 'personalizationRecords', record.id));
+      setAdminPersRecords(prev => prev.filter(r => r.id !== record.id));
+    } catch {
+      alert('Failed to delete record. Please try again.');
+    } finally {
+      setDeletingPersId(null);
     }
   }
 
@@ -1074,10 +1162,10 @@ export default function AdminPage({ user: _user }: Props) {
 
       <div className="max-w-7xl mx-auto p-4">
         <div className="flex flex-wrap gap-2 mb-5">
-          {(['enrollments', 'agents', 'enrollmentLog', 'accountDetails', 'aggregators', 'profile'] as const).map(t => (
+          {(['enrollments', 'agents', 'enrollmentLog', 'personalizationRecords', 'accountDetails', 'aggregators', 'profile'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-5 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm ${tab === t ? 'bg-teal-700 text-white' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
-              {t === 'enrollments' ? '📋 Enrollment Records' : t === 'agents' ? '👥 Agents' : t === 'enrollmentLog' ? '📊 Enrollment Log' : t === 'accountDetails' ? '🏦 Account Details' : t === 'aggregators' ? '👤 Aggregators' : '🔐 My Profile'}
+              {t === 'enrollments' ? '📋 Enrollment Records' : t === 'agents' ? '👥 Agents' : t === 'enrollmentLog' ? '📊 Enrollment Log' : t === 'personalizationRecords' ? '🎯 Personalization' : t === 'accountDetails' ? '🏦 Account Details' : t === 'aggregators' ? '👤 Aggregators' : '🔐 My Profile'}
             </button>
           ))}
         </div>
@@ -1645,6 +1733,137 @@ export default function AdminPage({ user: _user }: Props) {
                 </>
               );
             })()}
+          </div>
+        )}
+        {tab === 'personalizationRecords' && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+            <h2 className="text-lg font-semibold text-gray-800 mb-1">🎯 Personalization Records</h2>
+            <p className="text-sm text-gray-500 mb-5">All personalization records submitted by agents.</p>
+
+            {/* Grand Total */}
+            {!loadingAdminPers && (
+              <div className="bg-teal-50 border border-teal-200 rounded-lg px-5 py-3 mb-5 flex items-center justify-between">
+                <span className="text-sm font-medium text-teal-800">Grand Total</span>
+                <span className="text-2xl font-bold text-teal-700">{computeGrandTotal(adminPersRecords).toLocaleString()}</span>
+              </div>
+            )}
+
+            {/* Loading */}
+            {loadingAdminPers && (
+              <div className="flex items-center justify-center py-10 text-gray-400 gap-2">
+                <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                Loading…
+              </div>
+            )}
+
+            {/* Error */}
+            {adminPersError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2 mb-4">{adminPersError}</div>
+            )}
+
+            {/* Empty state */}
+            {!loadingAdminPers && !adminPersError && adminPersRecords.length === 0 && (
+              <p className="text-gray-500 text-sm text-center py-8">No personalization records found.</p>
+            )}
+
+            {/* Records table */}
+            {!loadingAdminPers && adminPersRecords.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-100">
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Agent</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Count</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {adminPersRecords.map((r, i) => (
+                      <tr key={r.id} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-teal-50 transition-colors`}>
+                        <td className="px-4 py-3 text-gray-700">{r.agentName}</td>
+                        <td className="px-4 py-3 font-medium text-gray-700">{r.personalizationDate}</td>
+                        <td className="px-4 py-3 text-right">
+                          <span className="inline-flex items-center justify-center bg-teal-100 text-teal-800 font-bold text-sm px-3 py-1 rounded-full">
+                            {r.count.toLocaleString()}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => openEditPersRecord(r)}
+                              className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-3 py-1 rounded-lg transition-colors"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeletePersRecord(r)}
+                              disabled={deletingPersId === r.id}
+                              className="text-xs bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 px-3 py-1 rounded-lg transition-colors disabled:opacity-50"
+                            >
+                              {deletingPersId === r.id ? 'Deleting…' : 'Delete'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Edit modal */}
+            {editPersRecord && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm mx-4">
+                  <h3 className="text-base font-semibold text-gray-800 mb-4">Edit Personalization Record</h3>
+                  <form onSubmit={handleEditPersSave} className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                      <input
+                        type="date"
+                        value={editPersDate}
+                        onChange={e => setEditPersDate(e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Count</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="999999"
+                        value={editPersCount}
+                        onChange={e => setEditPersCount(e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                      />
+                    </div>
+                    {editPersError && (
+                      <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{editPersError}</div>
+                    )}
+                    <div className="flex gap-3 pt-1">
+                      <button
+                        type="submit"
+                        disabled={editPersSaving}
+                        className="flex-1 bg-teal-700 hover:bg-teal-800 text-white font-medium py-2 rounded-lg transition-colors disabled:opacity-60 text-sm"
+                      >
+                        {editPersSaving ? 'Saving…' : 'Save'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditPersRecord(null)}
+                        className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2 rounded-lg transition-colors text-sm"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
         )}
         {tab === 'accountDetails' && (

@@ -57,6 +57,16 @@ service cloud.firestore {
       allow read, list:     if request.auth != null;
     }
 
+    match /personalizationRecords/{docId} {
+      // Agents can create only their own records
+      allow create: if request.auth != null &&
+        request.resource.data.agentId == request.auth.uid;
+      // Any authenticated user can read
+      allow read, list: if request.auth != null;
+      // Only admins can update or delete
+      allow update, delete: if isAdmin();
+    }
+
     match /counters/{docId} {
       // Only authenticated users can read/write counters (for ID generation)
       allow read, write: if request.auth != null;

@@ -6,7 +6,7 @@ import { auth, db } from '../firebase';
 import { loadGeoData, State } from '../geoData';
 import Logo from '../components/Logo';
 import { EnrollmentLog, formatMonthRange, sortEnrollmentLogs } from '../enrollmentLogUtils';
-import { PersonalizationRecord, buildPersonalizationDocument, validatePersonalizationDate, validatePersonalizationCount, sortPersonalizationRecords } from '../personalizationUtils';
+import { PersonalizationRecord, buildPersonalizationDocument, validatePersonalizationDate, validatePersonalizationCount, sortPersonalizationRecords, computeGrandTotal } from '../personalizationUtils';
 import IdCardModal from '../components/IdCardModal';
 import ChangePasswordForm from '../components/ChangePasswordForm';
 
@@ -37,6 +37,7 @@ export default function AgentPage({ user }: Props) {
   const [deviceId, setDeviceId] = useState('');
   const savedDeviceId = useRef('');
   const [profilePhone, setProfilePhone] = useState('');
+  const [profileDroidNumber, setProfileDroidNumber] = useState('DROID-S120-');
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSuccess, setProfileSuccess] = useState('');
   const [profileError, setProfileError] = useState('');
@@ -62,6 +63,7 @@ export default function AgentPage({ user }: Props) {
         const data = snap.data();
         if (data.deviceId) { setDeviceId(data.deviceId); savedDeviceId.current = data.deviceId; }
         if (data.phone) setProfilePhone(data.phone);
+        if (data.deviceDroidNumber) setProfileDroidNumber(data.deviceDroidNumber);
         if (data.profileStateId) setProfileStateId(data.profileStateId);
         if (data.profileStateName) setProfileStateName(data.profileStateName);
         if (data.profileLgaId) setProfileLgaId(data.profileLgaId);
@@ -213,6 +215,7 @@ export default function AgentPage({ user }: Props) {
     try {
       await updateDoc(doc(db, 'users', user.uid), {
         phone: profilePhone,
+        deviceDroidNumber: profileDroidNumber,
         profileStateId,
         profileStateName,
         profileLgaId,
@@ -378,7 +381,7 @@ export default function AgentPage({ user }: Props) {
           {(['form', 'history', 'profile', 'enrollmentLog', 'personalizationRecords', 'accountDetails', 'introLetter'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === t ? 'bg-teal-700 text-white' : 'bg-white text-gray-600 border'}`}>
-              {t === 'form' ? 'Submit Enrollment' : t === 'history' ? 'My Submissions' : t === 'profile' ? 'My Profile' : t === 'enrollmentLog' ? '📊 Enrollment Log' : t === 'personalizationRecords' ? '🎯 Personalization Records' : t === 'accountDetails' ? '🏦 Account Details' : '📄 Intro Letter'}
+              {t === 'form' ? 'Submit Enrollment' : t === 'history' ? 'My Submissions' : t === 'profile' ? 'My Profile' : t === 'enrollmentLog' ? '📊 Enrollment Log' : t === 'personalizationRecords' ? '🎯 Bulk Personalization Records' : t === 'accountDetails' ? '🏦 Account Details' : '📄 Intro Letter'}
             </button>
           ))}
         </div>
@@ -491,6 +494,24 @@ export default function AgentPage({ user }: Props) {
                   onChange={e => setProfilePhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
                   placeholder="08012345678"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Device DROID Number</label>
+                <input
+                  type="text"
+                  value={profileDroidNumber}
+                  onChange={e => {
+                    const val = e.target.value;
+                    if (val.startsWith('DROID-S120-')) {
+                      setProfileDroidNumber(val);
+                    } else {
+                      setProfileDroidNumber('DROID-S120-');
+                    }
+                  }}
+                  placeholder="DROID-S120-"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono"
+                />
+                <p className="text-xs text-gray-400 mt-1">Alphanumeric suffix after <span className="font-mono">DROID-S120-</span></p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
@@ -670,8 +691,22 @@ export default function AgentPage({ user }: Props) {
         )}
         {tab === 'personalizationRecords' && (
           <div className="bg-white rounded-xl shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-800 mb-1">🎯 Personalization Records</h2>
-            <p className="text-sm text-gray-500 mb-5">Record the number of personalizations you received on a given date.</p>
+            <h2 className="text-lg font-semibold text-gray-800 mb-1">🎯 Bulk Personalization Records</h2>
+            <p className="text-sm text-gray-500 mb-5">Record the number of bulk personalizations you received on a given date.</p>
+
+            {/* Summary Stat Cards */}
+            {!loadingPersonalization && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                <div className="bg-teal-50 border border-teal-200 rounded-xl p-4">
+                  <div className="text-xs font-semibold text-teal-800 uppercase tracking-wider mb-1">My Total Bulk Personalizations</div>
+                  <div className="text-3xl font-extrabold text-teal-700">{computeGrandTotal(personalizationRecords).toLocaleString()}</div>
+                </div>
+                <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                  <div className="text-xs font-semibold text-purple-800 uppercase tracking-wider mb-1">Total Submissions</div>
+                  <div className="text-3xl font-extrabold text-purple-700">{personalizationRecords.length}</div>
+                </div>
+              </div>
+            )}
 
             {/* Submission form */}
             <form onSubmit={handlePersonalizationSubmit} className="space-y-4 mb-6">
@@ -685,7 +720,7 @@ export default function AgentPage({ user }: Props) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Number of Personalizations <span className="text-red-500">*</span></label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Number of Bulk Personalizations <span className="text-red-500">*</span></label>
                 <input
                   type="number"
                   min="0"
@@ -703,12 +738,12 @@ export default function AgentPage({ user }: Props) {
                 disabled={persSubmitting}
                 className="w-full bg-teal-700 hover:bg-teal-800 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-60 text-sm"
               >
-                {persSubmitting ? 'Saving…' : 'Submit Personalization Record'}
+                {persSubmitting ? 'Saving…' : 'Submit Bulk Personalization Record'}
               </button>
             </form>
 
             {/* Records table */}
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">My Personalization Records</h3>
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">My Bulk Personalization Records</h3>
             {loadingPersonalization ? (
               <div className="flex items-center justify-center py-10 text-gray-400 gap-2">
                 <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -720,7 +755,7 @@ export default function AgentPage({ user }: Props) {
             ) : personalizationError ? (
               <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{personalizationError}</div>
             ) : personalizationRecords.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-8">No personalization records submitted yet.</p>
+              <p className="text-gray-500 text-sm text-center py-8">No bulk personalization records submitted yet.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">

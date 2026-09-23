@@ -18,6 +18,7 @@ export default function AuthPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [deviceId, setDeviceId] = useState('');
+  const [deviceDroidNumber, setDeviceDroidNumber] = useState('DROID-S120-');
   const [phone, setPhone] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -77,7 +78,7 @@ export default function AuthPage() {
         const cred = await createUserWithEmailAndPassword(auth, email, password);
         await updateProfile(cred.user, { displayName: name });
         await setDoc(doc(db, 'users', cred.user.uid), {
-          name, email, role: 'AGENT', deviceId, phone,
+          name, email, role: 'AGENT', deviceId, deviceDroidNumber, phone,
           profileStateId: agentStateId, profileStateName: agentStateName,
           profileLgaId: agentLgaId, profileLgaName: agentLgaName,
           createdAt: new Date().toISOString(),
@@ -403,6 +404,24 @@ export default function AuthPage() {
                             placeholder="HENA-315835789326461" maxLength={20}
                             className={`${inputClass} font-mono`} />
                           <p className="text-xs text-gray-400 mt-1">{deviceId.length}/20 characters</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1.5">Device DROID Number</label>
+                          <input
+                            type="text"
+                            value={deviceDroidNumber}
+                            onChange={e => {
+                              const val = e.target.value;
+                              if (val.startsWith('DROID-S120-')) {
+                                setDeviceDroidNumber(val);
+                              } else {
+                                setDeviceDroidNumber('DROID-S120-');
+                              }
+                            }}
+                            placeholder="DROID-S120-"
+                            className={`${inputClass} font-mono`}
+                          />
+                          <p className="text-xs text-gray-400 mt-1">Alphanumeric suffix after <span className="font-mono">DROID-S120-</span></p>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1.5">Email Address</label>

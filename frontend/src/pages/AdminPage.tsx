@@ -24,6 +24,8 @@ import {
   validatePersonalizationCount,
   sortPersonalizationRecords,
   computeGrandTotal,
+  computeAgentPersonalizationSummaries,
+  computeTotalsByAgentId,
 } from '../personalizationUtils';
 
 interface Props { user: User; }
@@ -32,7 +34,7 @@ interface Enrollment {
   deviceId: string; dailyFigures: number; issuesComplaints: string;
   agentName: string; agentEmail: string; submittedAt: string;
 }
-interface Agent { id: string; name: string; email: string; deviceId?: string; phone?: string; createdAt: string; accountNumber?: string; accountName?: string; bankName?: string; accountLocked?: boolean; aggregatorId?: string; }
+interface Agent { id: string; name: string; email: string; deviceId?: string; deviceDroidNumber?: string; phone?: string; createdAt: string; accountNumber?: string; accountName?: string; bankName?: string; accountLocked?: boolean; aggregatorId?: string; }
 
 export default function AdminPage({ user: _user }: Props) {
   const [tab, setTab] = useState<'enrollments' | 'agents' | 'enrollmentLog' | 'personalizationRecords' | 'accountDetails' | 'aggregators' | 'profile'>('enrollments');
@@ -93,6 +95,7 @@ export default function AdminPage({ user: _user }: Props) {
   const [assigningAggregatorId, setAssigningAggregatorId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editDeviceId, setEditDeviceId] = useState('');
+  const [editDroidNumber, setEditDroidNumber] = useState('DROID-S120-');
   const [editPhone, setEditPhone] = useState('');
   const [editSaving, setEditSaving] = useState(false);
   const [resetMsg, setResetMsg] = useState<Record<string, string>>({});
@@ -140,6 +143,8 @@ export default function AdminPage({ user: _user }: Props) {
   const [adminPersRecords, setAdminPersRecords] = useState<PersonalizationRecord[]>([]);
   const [loadingAdminPers, setLoadingAdminPers] = useState(false);
   const [adminPersError, setAdminPersError] = useState('');
+  const [persViewMode, setPersViewMode] = useState<'allRecords' | 'agentSummary'>('allRecords');
+  const [persAgentSearch, setPersAgentSearch] = useState('');
   const [editPersRecord, setEditPersRecord] = useState<PersonalizationRecord | null>(null);
   const [editPersDate, setEditPersDate] = useState('');
   const [editPersCount, setEditPersCount] = useState('');
@@ -324,7 +329,7 @@ export default function AdminPage({ user: _user }: Props) {
     } else {
       if (tab === 'accountDetails' && accountAgents.length === 0) loadAccountAgents();
       if (tab === 'aggregators') loadAggregators();
-      if (tab === 'agents') { loadAgents(); loadAllAggregators(); }
+      if (tab === 'agents') { loadAgents(); loadAllAggregators(); loadAdminPersonalizationRecords(); }
       else if (agents.length === 0) loadAgents();
       if (tab === 'personalizationRecords') loadAdminPersonalizationRecords();
       setLoading(false);
@@ -482,6 +487,7 @@ export default function AdminPage({ user: _user }: Props) {
     setEditAgent(a);
     setEditName(a.name);
     setEditDeviceId(a.deviceId || '');
+    setEditDroidNumber(a.deviceDroidNumber || 'DROID-S120-');
     setEditPhone(a.phone || '');
   }
 
@@ -490,8 +496,8 @@ export default function AdminPage({ user: _user }: Props) {
     if (!editAgent) return;
     setEditSaving(true);
     try {
-      await updateDoc(doc(db, 'users', editAgent.id), { name: editName, deviceId: editDeviceId, phone: editPhone });
-      setAgents(prev => prev.map(a => a.id === editAgent.id ? { ...a, name: editName, deviceId: editDeviceId, phone: editPhone } : a));
+      await updateDoc(doc(db, 'users', editAgent.id), { name: editName, deviceId: editDeviceId, deviceDroidNumber: editDroidNumber, phone: editPhone });
+      setAgents(prev => prev.map(a => a.id === editAgent.id ? { ...a, name: editName, deviceId: editDeviceId, deviceDroidNumber: editDroidNumber, phone: editPhone } : a));
       setEditAgent(null);
     } catch (err: any) {
       alert('Failed to update: ' + err.message);
@@ -785,12 +791,14 @@ export default function AdminPage({ user: _user }: Props) {
     XLSX.writeFile(wb, fileName);
   }
 
+  const agentTotalsMap = computeTotalsByAgentId(adminPersRecords);
+
   function exportAgentsExcel() {
     const today = new Date().toISOString().split('T')[0];
     const fileName = `agents-${today}.xlsx`;
     const wb = XLSX.utils.book_new();
     const wsData: string[][] = [
-      ['S/No.', 'Agent Name', 'Email', 'Phone', 'Device ID', 'State', 'LGA', 'Aggregator ID', 'Aggregator Name', 'Registered'],
+      ['S/No.', 'Agent Name', 'Email', 'Phone', 'Device ID', 'State', 'LGA', 'Aggregator ID', 'Aggregator Name', 'Total Personalization', 'Registered'],
       ...filteredAgents.map((a, i) => {
         const agg = allAggregators.find(ag => ag.id === a.aggregatorId);
         return [
@@ -803,6 +811,7 @@ export default function AdminPage({ user: _user }: Props) {
           (a as any).profileLgaName || '',
           agg ? agg.aggregatorId : '',
           agg ? agg.name : '',
+          String(agentTotalsMap[a.id] || 0),
           a.createdAt ? new Date(a.createdAt).toLocaleDateString('en-NG', { dateStyle: 'medium' }) : '',
         ];
       }),
@@ -810,9 +819,57 @@ export default function AdminPage({ user: _user }: Props) {
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     ws['!cols'] = [
       { wch: 6 }, { wch: 30 }, { wch: 30 }, { wch: 14 }, { wch: 22 },
-      { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 30 }, { wch: 18 },
+      { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 30 }, { wch: 20 }, { wch: 18 },
     ];
     XLSX.utils.book_append_sheet(wb, ws, 'Agents');
+    XLSX.writeFile(wb, fileName);
+  }
+
+  function exportAgentPersonalizationExcel() {
+    const today = new Date().toISOString().split('T')[0];
+    const fileName = `agent-personalization-summary-${today}.xlsx`;
+    const wb = XLSX.utils.book_new();
+    const summaries = computeAgentPersonalizationSummaries(adminPersRecords);
+    const filteredSummaries = summaries.filter(s =>
+      !persAgentSearch || s.agentName.toLowerCase().includes(persAgentSearch.toLowerCase())
+    );
+    const wsData: string[][] = [
+      ['S/No.', 'Agent Name', 'Total Personalization', 'Entries Count', 'Date Range'],
+      ...filteredSummaries.map((s, i) => [
+        String(i + 1),
+        s.agentName || '',
+        String(s.totalCount || 0),
+        String(s.recordCount || 0),
+        s.dateRange || '',
+      ]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols'] = [
+      { wch: 6 }, { wch: 30 }, { wch: 22 }, { wch: 15 }, { wch: 26 },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, 'Personalization Summary');
+    XLSX.writeFile(wb, fileName);
+  }
+
+  function exportAllPersonalizationRecordsExcel() {
+    const today = new Date().toISOString().split('T')[0];
+    const fileName = `all-bulk-personalization-records-${today}.xlsx`;
+    const wb = XLSX.utils.book_new();
+    const wsData: string[][] = [
+      ['S/No.', 'Agent Name', 'Date', 'Count', 'Submitted At'],
+      ...adminPersRecords.map((r, i) => [
+        String(i + 1),
+        r.agentName || '',
+        r.personalizationDate || '',
+        String(r.count || 0),
+        r.submittedAt ? new Date(r.submittedAt).toLocaleString('en-NG') : '',
+      ]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols'] = [
+      { wch: 6 }, { wch: 30 }, { wch: 18 }, { wch: 15 }, { wch: 25 },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, 'All Submission Records');
     XLSX.writeFile(wb, fileName);
   }
 
@@ -1027,6 +1084,20 @@ export default function AdminPage({ user: _user }: Props) {
                   placeholder="HENA-315835789326461" maxLength={20}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono" />
                 <p className="text-xs text-gray-400 mt-1">{editDeviceId.length}/20 characters</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Device DROID Number</label>
+                <input
+                  type="text"
+                  value={editDroidNumber}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditDroidNumber(val.startsWith('DROID-S120-') ? val : 'DROID-S120-');
+                  }}
+                  placeholder="DROID-S120-"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono"
+                />
+                <p className="text-xs text-gray-400 mt-1">Alphanumeric suffix after <span className="font-mono">DROID-S120-</span></p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
@@ -1471,6 +1542,8 @@ export default function AdminPage({ user: _user }: Props) {
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Phone</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Device ID</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Device DROID No.</th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Personalization</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Registered</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider min-w-[160px]">Aggregator</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider min-w-[200px]">Actions</th>
@@ -1491,6 +1564,14 @@ export default function AdminPage({ user: _user }: Props) {
                           <td className="px-4 py-3.5 text-gray-500 text-xs">{a.phone || <span className="text-gray-300">—</span>}</td>
                           <td className="px-4 py-3.5">
                             <span className="font-mono text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">{a.deviceId || '—'}</span>
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <span className="font-mono text-xs bg-purple-50 text-purple-700 px-2 py-1 rounded">{a.deviceDroidNumber || '—'}</span>
+                          </td>
+                          <td className="px-4 py-3.5 text-right font-medium">
+                            <span className="inline-flex items-center justify-center bg-teal-50 text-teal-800 border border-teal-200 font-bold text-xs px-2.5 py-1 rounded-full">
+                              {(agentTotalsMap[a.id] || 0).toLocaleString()}
+                            </span>
                           </td>
                           <td className="px-4 py-3.5 text-gray-400 text-xs">{new Date(a.createdAt).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</td>
                           <td className="px-4 py-3.5">
@@ -1736,15 +1817,98 @@ export default function AdminPage({ user: _user }: Props) {
           </div>
         )}
         {tab === 'personalizationRecords' && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-            <h2 className="text-lg font-semibold text-gray-800 mb-1">🎯 Personalization Records</h2>
-            <p className="text-sm text-gray-500 mb-5">All personalization records submitted by agents.</p>
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-6">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-800 mb-1">🎯 Bulk Personalization Records</h2>
+              <p className="text-sm text-gray-500">Overview and individual records of agent bulk personalization submissions.</p>
+            </div>
 
-            {/* Grand Total */}
+            {/* Stat Cards */}
             {!loadingAdminPers && (
-              <div className="bg-teal-50 border border-teal-200 rounded-lg px-5 py-3 mb-5 flex items-center justify-between">
-                <span className="text-sm font-medium text-teal-800">Grand Total</span>
-                <span className="text-2xl font-bold text-teal-700">{computeGrandTotal(adminPersRecords).toLocaleString()}</span>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-teal-50 border border-teal-200 rounded-xl p-4">
+                  <div className="text-xs font-semibold text-teal-800 uppercase tracking-wider mb-1">Grand Total Bulk Personalization</div>
+                  <div className="text-3xl font-extrabold text-teal-700">{computeGrandTotal(adminPersRecords).toLocaleString()}</div>
+                </div>
+                {(() => {
+                  const summaries = computeAgentPersonalizationSummaries(adminPersRecords);
+                  const avg = summaries.length > 0 ? Math.round(computeGrandTotal(adminPersRecords) / summaries.length) : 0;
+                  return (
+                    <>
+                      <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                        <div className="text-xs font-semibold text-purple-800 uppercase tracking-wider mb-1">Active Agents</div>
+                        <div className="text-3xl font-extrabold text-purple-700">{summaries.length}</div>
+                      </div>
+                      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                        <div className="text-xs font-semibold text-blue-800 uppercase tracking-wider mb-1">Average Per Agent</div>
+                        <div className="text-3xl font-extrabold text-blue-700">{avg.toLocaleString()}</div>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* View Mode Switcher and Controls */}
+            {!loadingAdminPers && (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
+                <div className="flex rounded-lg overflow-hidden border border-gray-200 max-w-md">
+                  <button
+                    onClick={() => setPersViewMode('allRecords')}
+                    className={`px-4 py-2 text-xs font-semibold transition-colors ${
+                      persViewMode === 'allRecords'
+                        ? 'bg-teal-700 text-white'
+                        : 'bg-white text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    📋 All Submission Records ({adminPersRecords.length})
+                  </button>
+                  <button
+                    onClick={() => setPersViewMode('agentSummary')}
+                    className={`px-4 py-2 text-xs font-semibold transition-colors ${
+                      persViewMode === 'agentSummary'
+                        ? 'bg-teal-700 text-white'
+                        : 'bg-white text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    👤 Total by Agent Summary
+                  </button>
+                </div>
+
+                {persViewMode === 'agentSummary' && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="Search agent name..."
+                      value={persAgentSearch}
+                      onChange={e => setPersAgentSearch(e.target.value)}
+                      className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-400 bg-gray-50"
+                    />
+                    <button
+                      onClick={exportAgentPersonalizationExcel}
+                      className="flex items-center gap-1.5 bg-teal-700 hover:bg-teal-800 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors shadow-sm"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      Export Summary Excel
+                    </button>
+                  </div>
+                )}
+                
+                {persViewMode === 'allRecords' && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={exportAllPersonalizationRecordsExcel}
+                      className="flex items-center gap-1.5 bg-teal-700 hover:bg-teal-800 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors shadow-sm"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      Export All Records Excel
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1769,8 +1933,58 @@ export default function AdminPage({ user: _user }: Props) {
               <p className="text-gray-500 text-sm text-center py-8">No personalization records found.</p>
             )}
 
-            {/* Records table */}
-            {!loadingAdminPers && adminPersRecords.length > 0 && (
+            {/* View 1: Agent Personalization Summary */}
+            {!loadingAdminPers && persViewMode === 'agentSummary' && adminPersRecords.length > 0 && (() => {
+              const summaries = computeAgentPersonalizationSummaries(adminPersRecords);
+              const filteredSummaries = summaries.filter(s =>
+                !persAgentSearch || s.agentName.toLowerCase().includes(persAgentSearch.toLowerCase())
+              );
+              if (filteredSummaries.length === 0) {
+                return <p className="text-gray-400 text-sm text-center py-8">No agents found matching search.</p>;
+              }
+              return (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-100">
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Agent Name</th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Personalization</th>
+                        <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Submissions</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date Range</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {filteredSummaries.map((s, i) => (
+                        <tr key={s.agentId} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-teal-50 transition-colors`}>
+                          <td className="px-4 py-3.5 font-semibold text-gray-800">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-sm">
+                                {s.agentName?.charAt(0).toUpperCase()}
+                              </div>
+                              <span>{s.agentName}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3.5 text-right font-bold text-teal-700 text-base">
+                            <span className="inline-flex items-center justify-center bg-teal-100 text-teal-800 font-bold text-sm px-3.5 py-1 rounded-full">
+                              {s.totalCount.toLocaleString()}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3.5 text-center text-gray-600 font-medium">
+                            {s.recordCount} entry{s.recordCount !== 1 ? 'ies' : ''}
+                          </td>
+                          <td className="px-4 py-3.5 text-gray-500 text-xs font-mono">
+                            {s.dateRange}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+
+            {/* View 2: All Individual Records Table */}
+            {!loadingAdminPers && persViewMode === 'allRecords' && adminPersRecords.length > 0 && (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>

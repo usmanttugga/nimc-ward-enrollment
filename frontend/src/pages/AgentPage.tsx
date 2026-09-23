@@ -39,6 +39,8 @@ export default function AgentPage({ user }: Props) {
   const savedDeviceId = useRef('');
   const [profilePhone, setProfilePhone] = useState('');
   const [profileDroidNumber, setProfileDroidNumber] = useState('DROID-S120-');
+  const savedDroidNumber = useRef('');
+  const [droidLocked, setDroidLocked] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSuccess, setProfileSuccess] = useState('');
   const [profileError, setProfileError] = useState('');
@@ -64,9 +66,15 @@ export default function AgentPage({ user }: Props) {
         const data = snap.data();
         if (data.deviceId) { setDeviceId(data.deviceId); savedDeviceId.current = data.deviceId; }
         if (data.phone) setProfilePhone(data.phone);
-        if (data.deviceDroidNumber) setProfileDroidNumber(data.deviceDroidNumber);
-        if (data.profileStateId) setProfileStateId(data.profileStateId);
-        if (data.profileStateName) setProfileStateName(data.profileStateName);
+        if (data.deviceDroidNumber) {
+          setProfileDroidNumber(data.deviceDroidNumber);
+          // Track the saved value so we can lock it once set
+          if (data.deviceDroidNumber.trim() !== 'DROID-S120-') {
+            savedDroidNumber.current = data.deviceDroidNumber;
+            setDroidLocked(true);
+          }
+        }
+        if (data.profileStateId) setProfileStateId(data.profileStateId);        if (data.profileStateName) setProfileStateName(data.profileStateName);
         if (data.profileLgaId) setProfileLgaId(data.profileLgaId);
         if (data.profileLgaName) setProfileLgaName(data.profileLgaName);
         if (data.accountNumber) setAccountNumber(data.accountNumber);
@@ -219,8 +227,14 @@ export default function AgentPage({ user }: Props) {
     setProfileError(''); setProfileSuccess('');
     setProfileSaving(true);
     try {
-      // Check DROID uniqueness — skip if only the prefix or unchanged
       const droidValue = profileDroidNumber.trim();
+      // Block reverting to bare prefix if DROID was previously set
+      if (savedDroidNumber.current && (!droidValue || droidValue === 'DROID-S120-')) {
+        setProfileError('Device DROID Number cannot be removed once it has been set.');
+        setProfileSaving(false);
+        return;
+      }
+      // Check DROID uniqueness — skip if only the prefix or unchanged
       if (droidValue && droidValue !== 'DROID-S120-') {
         const droidSnap = await getDocs(query(collection(db, 'users'), where('deviceDroidNumber', '==', droidValue)));
         const conflict = droidSnap.docs.find(d => d.id !== user.uid);
@@ -238,6 +252,11 @@ export default function AgentPage({ user }: Props) {
         profileLgaId,
         profileLgaName,
       });
+      // Lock the DROID number for this session once successfully saved
+      if (profileDroidNumber.trim() && profileDroidNumber.trim() !== 'DROID-S120-') {
+        savedDroidNumber.current = profileDroidNumber.trim();
+        setDroidLocked(true);
+      }
       setProfileSuccess('Profile updated successfully!');
     } catch (err: any) {
       setProfileError('Failed to update: ' + err.message);
@@ -594,6 +613,7 @@ export default function AgentPage({ user }: Props) {
                 <input
                   type="text"
                   value={profileDroidNumber}
+                  disabled={droidLocked}
                   onChange={e => {
                     const val = e.target.value;
                     if (val.startsWith('DROID-S120-')) {
@@ -603,9 +623,22 @@ export default function AgentPage({ user }: Props) {
                     }
                   }}
                   placeholder="DROID-S120-"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono"
+                  className={`w-full border rounded-lg px-3 py-2 text-sm font-mono ${
+                    droidLocked
+                      ? 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed'
+                      : 'border-gray-300 focus:outline-none focus:ring-2 focus:ring-teal-500'
+                  }`}
                 />
-                <p className="text-xs text-gray-400 mt-1">Alphanumeric suffix after <span className="font-mono">DROID-S120-</span></p>
+                {droidLocked ? (
+                  <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                    Device DROID Number is locked and cannot be changed.
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-400 mt-1">Alphanumeric suffix after <span className="font-mono">DROID-S120-</span></p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">State</label>

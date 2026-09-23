@@ -213,6 +213,17 @@ export default function AgentPage({ user }: Props) {
     setProfileError(''); setProfileSuccess('');
     setProfileSaving(true);
     try {
+      // Check DROID uniqueness — skip if only the prefix or unchanged
+      const droidValue = profileDroidNumber.trim();
+      if (droidValue && droidValue !== 'DROID-S120-') {
+        const droidSnap = await getDocs(query(collection(db, 'users'), where('deviceDroidNumber', '==', droidValue)));
+        const conflict = droidSnap.docs.find(d => d.id !== user.uid);
+        if (conflict) {
+          setProfileError('This Device DROID Number is already registered to another agent.');
+          setProfileSaving(false);
+          return;
+        }
+      }
       await updateDoc(doc(db, 'users', user.uid), {
         phone: profilePhone,
         deviceDroidNumber: profileDroidNumber,

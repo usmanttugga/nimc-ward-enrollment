@@ -75,6 +75,16 @@ export default function AuthPage() {
           setLoading(false);
           return;
         }
+        // Check Device DROID Number uniqueness (skip if only the prefix was entered)
+        const droidValue = deviceDroidNumber.trim();
+        if (droidValue && droidValue !== 'DROID-S120-') {
+          const droidSnap = await getDocs(query(collection(db, 'users'), where('deviceDroidNumber', '==', droidValue)));
+          if (!droidSnap.empty) {
+            setError('This Device DROID Number is already registered to another account.');
+            setLoading(false);
+            return;
+          }
+        }
         const cred = await createUserWithEmailAndPassword(auth, email, password);
         await updateProfile(cred.user, { displayName: name });
         await setDoc(doc(db, 'users', cred.user.uid), {

@@ -99,6 +99,7 @@ export default function AdminPage({ user: _user }: Props) {
   const [editDroidNumber, setEditDroidNumber] = useState('DROID-S120-');
   const [editPhone, setEditPhone] = useState('');
   const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
   const [resetMsg, setResetMsg] = useState<Record<string, string>>({});
   const [setPasswordTarget, setSetPasswordTarget] = useState<{ uid: string; name: string; role: 'AGENT' | 'AGGREGATOR' } | null>(null);
   const [setPasswordSuccessMsg, setSetPasswordSuccessMsg] = useState('');
@@ -331,7 +332,6 @@ export default function AdminPage({ user: _user }: Props) {
       if (tab === 'accountDetails' && accountAgents.length === 0) loadAccountAgents();
       if (tab === 'aggregators') loadAggregators();
       if (tab === 'agents') { loadAgents(); loadAllAggregators(); loadAdminPersonalizationRecords(); }
-      else if (agents.length === 0) loadAgents();
       if (tab === 'personalizationRecords') loadAdminPersonalizationRecords();
       setLoading(false);
     }
@@ -490,18 +490,31 @@ export default function AdminPage({ user: _user }: Props) {
     setEditDeviceId(a.deviceId || '');
     setEditDroidNumber(a.deviceDroidNumber || 'DROID-S120-');
     setEditPhone(a.phone || '');
+    setEditError('');
   }
 
   async function handleEditSave(e: React.FormEvent) {
     e.preventDefault();
     if (!editAgent) return;
+    setEditError('');
     setEditSaving(true);
     try {
+      // Check DROID uniqueness — skip if only the prefix or unchanged
+      const droidValue = editDroidNumber.trim();
+      if (droidValue && droidValue !== 'DROID-S120-' && droidValue !== (editAgent.deviceDroidNumber ?? '')) {
+        const droidSnap = await getDocs(query(collection(db, 'users'), where('deviceDroidNumber', '==', droidValue)));
+        const conflict = droidSnap.docs.find(d => d.id !== editAgent.id);
+        if (conflict) {
+          setEditError('This Device DROID Number is already registered to another agent.');
+          setEditSaving(false);
+          return;
+        }
+      }
       await updateDoc(doc(db, 'users', editAgent.id), { name: editName, deviceId: editDeviceId, deviceDroidNumber: editDroidNumber, phone: editPhone });
       setAgents(prev => prev.map(a => a.id === editAgent.id ? { ...a, name: editName, deviceId: editDeviceId, deviceDroidNumber: editDroidNumber, phone: editPhone } : a));
       setEditAgent(null);
     } catch (err: any) {
-      alert('Failed to update: ' + err.message);
+      setEditError('Failed to update: ' + err.message);
     } finally {
       setEditSaving(false);
     }
@@ -1122,6 +1135,7 @@ export default function AdminPage({ user: _user }: Props) {
                   Cancel
                 </button>
               </div>
+              {editError && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2 mt-2">{editError}</div>}
             </form>
           </div>
         </div>
@@ -1536,7 +1550,7 @@ export default function AdminPage({ user: _user }: Props) {
                 <div className="text-center py-16 text-gray-400">{agentSearch ? 'No agents found matching your search.' : 'No agents registered yet.'}</div>
               ) : (
                 <div className="overflow-x-auto w-full">
-                  <table className="text-sm" style={{ minWidth: '1000px', width: '100%' }}>
+                  <table className="text-sm" style={{ minWidth: '1200px', width: '100%' }}>
                     <thead>
                       <tr className="bg-gray-50 border-b border-gray-100">
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Agent</th>

@@ -386,10 +386,10 @@ export default function AgentPage({ user }: Props) {
     <div className="min-h-screen bg-gray-50">
       {/* ── DROID Number Notice Modal ── */}
       {showDroidNotice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-            {/* Header */}
-            <div className="bg-teal-700 px-6 py-4 flex items-center gap-3">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md my-auto flex flex-col" style={{ maxHeight: '90vh' }}>
+            {/* Header — always visible */}
+            <div className="bg-teal-700 px-6 py-4 flex items-center gap-3 flex-shrink-0 rounded-t-2xl">
               <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
@@ -398,8 +398,8 @@ export default function AgentPage({ user }: Props) {
               <h2 className="text-white font-bold text-base tracking-wide">IMPORTANT NOTICE</h2>
             </div>
 
-            {/* Body */}
-            <div className="px-6 pt-5 pb-2 space-y-3 text-sm text-gray-700">
+            {/* Scrollable body */}
+            <div className="overflow-y-auto flex-1 px-6 pt-5 pb-2 space-y-3 text-sm text-gray-700">
               <p>Dear Esteemed Agent,</p>
               <p>
                 Please update your <span className="font-semibold text-teal-700">Device DROID Number</span> on your profile.
@@ -418,32 +418,32 @@ export default function AgentPage({ user }: Props) {
               </p>
               <p className="text-gray-500 italic">Thank you for your cooperation.</p>
               <p className="font-semibold text-teal-800">2 PLUS TECHNOLOGIES.</p>
+
+              {/* Steps */}
+              <div className="bg-gray-50 border border-gray-200 rounded-xl px-5 py-4">
+                <p className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-3">How to Update Your Profile</p>
+                <ol className="space-y-2 text-xs text-gray-600 list-none">
+                  {[
+                    'Log in to your dashboard.',
+                    'Click on My Profile.',
+                    'Locate the Device DROID Number field and enter your Device DROID Number.',
+                    <>Note: The prefix <span className="font-mono font-semibold text-teal-700">DROID-S120-</span> is already entered in the field. You only need to input the remaining digits of your Device DROID Number.</>,
+                    'Click Save Profile to save your changes.',
+                  ].map((step, idx) => (
+                    <li key={idx} className="flex items-start gap-2.5">
+                      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-teal-700 text-white text-xs font-bold flex items-center justify-center mt-0.5">
+                        {idx + 1}
+                      </span>
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ol>
+                <p className="text-xs text-gray-500 mt-3 italic">Thank you.</p>
+              </div>
             </div>
 
-            {/* Steps */}
-            <div className="mx-6 mb-4 mt-2 bg-gray-50 border border-gray-200 rounded-xl px-5 py-4">
-              <p className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-3">How to Update Your Profile</p>
-              <ol className="space-y-2 text-xs text-gray-600 list-none">
-                {[
-                  'Log in to your dashboard.',
-                  'Click on My Profile.',
-                  'Locate the Device DROID Number field and enter your Device DROID Number.',
-                  <>Note: The prefix <span className="font-mono font-semibold text-teal-700">DROID-S120-</span> is already entered in the field. You only need to input the remaining digits of your Device DROID Number.</>,
-                  'Click Save Profile to save your changes.',
-                ].map((step, idx) => (
-                  <li key={idx} className="flex items-start gap-2.5">
-                    <span className="flex-shrink-0 w-5 h-5 rounded-full bg-teal-700 text-white text-xs font-bold flex items-center justify-center mt-0.5">
-                      {idx + 1}
-                    </span>
-                    <span>{step}</span>
-                  </li>
-                ))}
-              </ol>
-              <p className="text-xs text-gray-500 mt-3 italic">Thank you.</p>
-            </div>
-
-            {/* Buttons */}
-            <div className="px-6 pb-5 flex flex-col gap-2">
+            {/* Buttons — always pinned at the bottom */}
+            <div className="px-6 py-4 flex flex-col gap-2 flex-shrink-0 border-t border-gray-100 rounded-b-2xl bg-white">
               <button
                 onClick={() => { setShowDroidNotice(false); setTab('profile'); }}
                 className="w-full bg-teal-700 hover:bg-teal-800 text-white font-semibold py-2.5 rounded-xl transition-colors text-sm"

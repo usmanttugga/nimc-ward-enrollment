@@ -81,11 +81,8 @@ export default function AgentPage({ user }: Props) {
         if (data.accountName) setAccountName(data.accountName);
         if (data.bankName) setBankName(data.bankName);
         if (data.accountLocked) setAccountLocked(true);
-        // Show DROID notice if agent hasn't set their DROID number yet
-        const droid = data.deviceDroidNumber ?? '';
-        if (!droid || droid.trim() === 'DROID-S120-') {
-          setShowDroidNotice(true);
-        }
+        // Show DROID notice on every login — agents who already set theirs can dismiss it
+        setShowDroidNotice(true);
       }
     });
   }, [user.uid]);

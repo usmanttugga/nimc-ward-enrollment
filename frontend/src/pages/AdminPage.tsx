@@ -19,6 +19,7 @@ import {
 } from '../enrollmentLogUtils';
 import {
   PersonalizationRecord,
+  AgentPersonalizationSummary,
   buildPersonalizationPatch,
   validatePersonalizationDate,
   validatePersonalizationCount,
@@ -830,12 +831,12 @@ export default function AdminPage({ user: _user }: Props) {
     const fileName = `agent-personalization-summary-${today}.xlsx`;
     const wb = XLSX.utils.book_new();
     const summaries = computeAgentPersonalizationSummaries(adminPersRecords);
-    const filteredSummaries = summaries.filter(s =>
+    const filteredSummaries = summaries.filter((s: AgentPersonalizationSummary) =>
       !persAgentSearch || s.agentName.toLowerCase().includes(persAgentSearch.toLowerCase())
     );
     const wsData: string[][] = [
       ['S/No.', 'Agent Name', 'Total Personalization', 'Entries Count', 'Date Range'],
-      ...filteredSummaries.map((s, i) => [
+      ...filteredSummaries.map((s: AgentPersonalizationSummary, i: number) => [
         String(i + 1),
         s.agentName || '',
         String(s.totalCount || 0),
@@ -1936,7 +1937,7 @@ export default function AdminPage({ user: _user }: Props) {
             {/* View 1: Agent Personalization Summary */}
             {!loadingAdminPers && persViewMode === 'agentSummary' && adminPersRecords.length > 0 && (() => {
               const summaries = computeAgentPersonalizationSummaries(adminPersRecords);
-              const filteredSummaries = summaries.filter(s =>
+              const filteredSummaries = summaries.filter((s: AgentPersonalizationSummary) =>
                 !persAgentSearch || s.agentName.toLowerCase().includes(persAgentSearch.toLowerCase())
               );
               if (filteredSummaries.length === 0) {
@@ -1954,7 +1955,7 @@ export default function AdminPage({ user: _user }: Props) {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {filteredSummaries.map((s, i) => (
+                      {filteredSummaries.map((s: AgentPersonalizationSummary, i: number) => (
                         <tr key={s.agentId} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-teal-50 transition-colors`}>
                           <td className="px-4 py-3.5 font-semibold text-gray-800">
                             <div className="flex items-center gap-3">

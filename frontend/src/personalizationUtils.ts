@@ -124,3 +124,62 @@ export function computeGrandTotal(records: Array<{ count: number }>): number {
 export function isDateAlreadyPresent(existingDates: string[], candidate: string): boolean {
   return existingDates.includes(candidate);
 }
+
+export interface AgentPersonalizationSummary {
+  agentId: string;
+  agentName: string;
+  totalCount: number;
+  recordCount: number;
+  earliestDate: string;
+  latestDate: string;
+  dateRange: string;
+}
+
+/**
+ * Group personalization records by agentId and calculate each agent's total count.
+ * Returns an array of AgentPersonalizationSummary sorted descending by totalCount.
+ */
+export function computeAgentPersonalizationSummaries(
+  records: Array<{ agentId: string; agentName: string; count: number; personalizationDate: string }>
+): AgentPersonalizationSummary[] {
+  const summaryMap: Record<string, AgentPersonalizationSummary> = {};
+
+  for (const r of records) {
+    if (!summaryMap[r.agentId]) {
+      summaryMap[r.agentId] = {
+        agentId: r.agentId,
+        agentName: r.agentName,
+        totalCount: 0,
+        recordCount: 0,
+        earliestDate: r.personalizationDate,
+        latestDate: r.personalizationDate,
+        dateRange: `${r.personalizationDate} to ${r.personalizationDate}`,
+      };
+    }
+    summaryMap[r.agentId].totalCount += r.count;
+    summaryMap[r.agentId].recordCount += 1;
+    if (r.personalizationDate < summaryMap[r.agentId].earliestDate) {
+      summaryMap[r.agentId].earliestDate = r.personalizationDate;
+    }
+    if (r.personalizationDate > summaryMap[r.agentId].latestDate) {
+      summaryMap[r.agentId].latestDate = r.personalizationDate;
+    }
+    summaryMap[r.agentId].dateRange = `${summaryMap[r.agentId].earliestDate} to ${summaryMap[r.agentId].latestDate}`;
+  }
+
+  return Object.values(summaryMap).sort((a, b) => b.totalCount - a.totalCount);
+}
+
+/**
+ * Calculate a lookup map of agentId -> total count.
+ */
+export function computeTotalsByAgentId(
+  records: Array<{ agentId: string; count: number }>
+): Record<string, number> {
+  const totals: Record<string, number> = {};
+  for (const r of records) {
+    totals[r.agentId] = (totals[r.agentId] || 0) + r.count;
+  }
+  return totals;
+}
+

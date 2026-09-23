@@ -454,7 +454,7 @@ export default function AgentPage({ user }: Props) {
                 onClick={() => setShowDroidNotice(false)}
                 className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2.5 rounded-xl transition-colors text-sm"
               >
-                Okay / Close
+                Close
               </button>
             </div>
           </div>

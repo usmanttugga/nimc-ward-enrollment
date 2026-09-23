@@ -416,8 +416,6 @@ export default function AgentPage({ user }: Props) {
               <p>
                 Please update your profile now to avoid possible payment processing delays.
               </p>
-              <p className="text-gray-500 italic">Thank you for your cooperation.</p>
-              <p className="font-semibold text-teal-800">2 PLUS TECHNOLOGIES.</p>
 
               {/* Steps */}
               <div className="bg-gray-50 border border-gray-200 rounded-xl px-5 py-4">
@@ -438,7 +436,8 @@ export default function AgentPage({ user }: Props) {
                     </li>
                   ))}
                 </ol>
-                <p className="text-xs text-gray-500 mt-3 italic">Thank you.</p>
+                <p className="text-xs text-gray-500 mt-3 italic">Thank you for your cooperation.</p>
+                <p className="text-xs font-semibold text-teal-800 mt-1">2 PLUS TECHNOLOGIES.</p>
               </div>
             </div>
 

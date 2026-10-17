@@ -13,5 +13,8 @@
     "build:frontend": "npm run build --workspace=frontend",
     "test:backend": "npm run test --workspace=backend",
     "test:frontend": "npm run test --workspace=frontend"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.8.0"
   }
 }

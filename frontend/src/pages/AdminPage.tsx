@@ -147,6 +147,9 @@ export default function AdminPage({ user: _user }: Props) {
   const [adminPersError, setAdminPersError] = useState('');
   const [persViewMode, setPersViewMode] = useState<'allRecords' | 'agentSummary'>('allRecords');
   const [persAgentSearch, setPersAgentSearch] = useState('');
+  const [persAllPage, setPersAllPage] = useState(0);
+  const [persSummaryPage, setPersSummaryPage] = useState(0);
+  const PERS_PAGE_SIZE = 20;
   const [editPersRecord, setEditPersRecord] = useState<PersonalizationRecord | null>(null);
   const [editPersDate, setEditPersDate] = useState('');
   const [editPersCount, setEditPersCount] = useState('');
@@ -355,7 +358,8 @@ export default function AdminPage({ user: _user }: Props) {
     return a.name?.toLowerCase().includes(q) ||
       a.email?.toLowerCase().includes(q) ||
       (a.deviceId ?? '').toLowerCase().includes(q) ||
-      (a.phone ?? '').toLowerCase().includes(q);
+      (a.phone ?? '').toLowerCase().includes(q) ||
+      (a.deviceDroidNumber ?? '').toLowerCase().includes(q);
   });
   const agentTotalPages = Math.ceil(filteredAgents.length / AGENT_PAGE_SIZE);
   const paginatedAgents = filteredAgents.slice(agentPage * AGENT_PAGE_SIZE, (agentPage + 1) * AGENT_PAGE_SIZE);
@@ -1541,7 +1545,7 @@ export default function AdminPage({ user: _user }: Props) {
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
-                  <input type="text" placeholder="Search by name, email, Device ID, or phone..." value={agentSearch}
+                  <input type="text" placeholder="Search by name, email, Device ID, DROID No., or phone..." value={agentSearch}
                     onChange={e => { setAgentSearch(e.target.value); setAgentPage(0); }}
                     className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-gray-50" />
                 </div>
@@ -1869,7 +1873,7 @@ export default function AdminPage({ user: _user }: Props) {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
                 <div className="flex rounded-lg overflow-hidden border border-gray-200 max-w-md">
                   <button
-                    onClick={() => setPersViewMode('allRecords')}
+                    onClick={() => { setPersViewMode('allRecords'); setPersAllPage(0); }}
                     className={`px-4 py-2 text-xs font-semibold transition-colors ${
                       persViewMode === 'allRecords'
                         ? 'bg-teal-700 text-white'
@@ -1879,7 +1883,7 @@ export default function AdminPage({ user: _user }: Props) {
                     📋 All Submission Records ({adminPersRecords.length})
                   </button>
                   <button
-                    onClick={() => setPersViewMode('agentSummary')}
+                    onClick={() => { setPersViewMode('agentSummary'); setPersSummaryPage(0); }}
                     className={`px-4 py-2 text-xs font-semibold transition-colors ${
                       persViewMode === 'agentSummary'
                         ? 'bg-teal-700 text-white'
@@ -1896,7 +1900,7 @@ export default function AdminPage({ user: _user }: Props) {
                       type="text"
                       placeholder="Search agent name..."
                       value={persAgentSearch}
-                      onChange={e => setPersAgentSearch(e.target.value)}
+                      onChange={e => { setPersAgentSearch(e.target.value); setPersSummaryPage(0); }}
                       className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-400 bg-gray-50"
                     />
                     <button
@@ -1957,7 +1961,10 @@ export default function AdminPage({ user: _user }: Props) {
               if (filteredSummaries.length === 0) {
                 return <p className="text-gray-400 text-sm text-center py-8">No agents found matching search.</p>;
               }
+              const summaryTotalPages = Math.ceil(filteredSummaries.length / PERS_PAGE_SIZE);
+              const paginatedSummaries = filteredSummaries.slice(persSummaryPage * PERS_PAGE_SIZE, (persSummaryPage + 1) * PERS_PAGE_SIZE);
               return (
+                <>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -1969,7 +1976,7 @@ export default function AdminPage({ user: _user }: Props) {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {filteredSummaries.map((s: AgentPersonalizationSummary, i: number) => (
+                      {paginatedSummaries.map((s: AgentPersonalizationSummary, i: number) => (
                         <tr key={s.agentId} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-teal-50 transition-colors`}>
                           <td className="px-4 py-3.5 font-semibold text-gray-800">
                             <div className="flex items-center gap-3">
@@ -1994,12 +2001,46 @@ export default function AdminPage({ user: _user }: Props) {
                       ))}
                     </tbody>
                   </table>
+                  {summaryTotalPages > 1 && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-t border-gray-100">
+                      <span className="text-sm text-gray-500">
+                        {filteredSummaries.length} agents · Page {persSummaryPage + 1} of {summaryTotalPages}
+                      </span>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <button onClick={() => setPersSummaryPage(p => p - 1)} disabled={persSummaryPage === 0}
+                          className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                          ←
+                        </button>
+                        {Array.from({ length: summaryTotalPages }, (_, i) => {
+                          const show = i === 0 || i === summaryTotalPages - 1 || Math.abs(i - persSummaryPage) <= 2;
+                          const ellipsisBefore = i === persSummaryPage - 3 && i > 1;
+                          const ellipsisAfter = i === persSummaryPage + 3 && i < summaryTotalPages - 2;
+                          if (ellipsisBefore || ellipsisAfter) return <span key={i} className="px-1 text-gray-400 text-sm">…</span>;
+                          if (!show) return null;
+                          return (
+                            <button key={i} onClick={() => setPersSummaryPage(i)}
+                              className={`min-w-[32px] px-2.5 py-1.5 text-sm font-medium rounded-lg border transition-colors ${persSummaryPage === i ? 'bg-teal-700 text-white border-teal-700' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                              {i + 1}
+                            </button>
+                          );
+                        })}
+                        <button onClick={() => setPersSummaryPage(p => p + 1)} disabled={persSummaryPage >= summaryTotalPages - 1}
+                          className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                          →
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
+                </>
               );
             })()}
 
             {/* View 2: All Individual Records Table */}
-            {!loadingAdminPers && persViewMode === 'allRecords' && adminPersRecords.length > 0 && (
+            {!loadingAdminPers && persViewMode === 'allRecords' && adminPersRecords.length > 0 && (() => {
+              const allTotalPages = Math.ceil(adminPersRecords.length / PERS_PAGE_SIZE);
+              const paginatedPersRecords = adminPersRecords.slice(persAllPage * PERS_PAGE_SIZE, (persAllPage + 1) * PERS_PAGE_SIZE);
+              return (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -2011,7 +2052,7 @@ export default function AdminPage({ user: _user }: Props) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {adminPersRecords.map((r, i) => (
+                    {paginatedPersRecords.map((r, i) => (
                       <tr key={r.id} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-teal-50 transition-colors`}>
                         <td className="px-4 py-3 text-gray-700">{r.agentName}</td>
                         <td className="px-4 py-3 font-medium text-gray-700">{r.personalizationDate}</td>
@@ -2041,8 +2082,39 @@ export default function AdminPage({ user: _user }: Props) {
                     ))}
                   </tbody>
                 </table>
+                {allTotalPages > 1 && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-t border-gray-100">
+                    <span className="text-sm text-gray-500">
+                      {adminPersRecords.length} records · Page {persAllPage + 1} of {allTotalPages}
+                    </span>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <button onClick={() => setPersAllPage(p => p - 1)} disabled={persAllPage === 0}
+                        className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                        ←
+                      </button>
+                      {Array.from({ length: allTotalPages }, (_, i) => {
+                        const show = i === 0 || i === allTotalPages - 1 || Math.abs(i - persAllPage) <= 2;
+                        const ellipsisBefore = i === persAllPage - 3 && i > 1;
+                        const ellipsisAfter = i === persAllPage + 3 && i < allTotalPages - 2;
+                        if (ellipsisBefore || ellipsisAfter) return <span key={i} className="px-1 text-gray-400 text-sm">…</span>;
+                        if (!show) return null;
+                        return (
+                          <button key={i} onClick={() => setPersAllPage(i)}
+                            className={`min-w-[32px] px-2.5 py-1.5 text-sm font-medium rounded-lg border transition-colors ${persAllPage === i ? 'bg-teal-700 text-white border-teal-700' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                            {i + 1}
+                          </button>
+                        );
+                      })}
+                      <button onClick={() => setPersAllPage(p => p + 1)} disabled={persAllPage >= allTotalPages - 1}
+                        className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                        →
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
+              );
+            })()}
 
             {/* Edit modal */}
             {editPersRecord && (

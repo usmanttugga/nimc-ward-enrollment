@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ID Card Calibration Tool</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #1a1a2e; color: #eee; padding: 20px; }
+    h1 { color: #4ecca3; }
+    canvas { border: 2px solid #4ecca3; display: block; margin: 20px 0; max-width: 100%; }
+    .controls { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+    .group { background: #16213e; padding: 12px; border-radius: 8px; min-width: 200px; }
+    .group h3 { margin: 0 0 8px; color: #4ecca3; font-size: 13px; }
+    label { display: block; font-size: 12px; margin-bottom: 4px; }
+    input[type=range] { width: 100%; }
+    input[type=number] { width: 70px; background: #0f3460; color: #eee; border: 1px solid #4ecca3; border-radius: 4px; padding: 2px 4px; }
+    .val { color: #f5a623; font-weight: bold; font-size: 12px; }
+    button { background: #4ecca3; color: #1a1a2e; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; }
+    button:hover { background: #38b2ac; }
+    #coords { background: #16213e; padding: 12px; border-radius: 8px; font-family: monospace; font-size: 13px; white-space: pre; color: #4ecca3; margin-top: 10px; }
+    .note { background: #0f3460; padding: 10px; border-radius: 6px; font-size: 12px; color: #aaa; margin-bottom: 16px; }
+  </style>
+</head>
+<body>
+  <h1>🪪 ID Card Calibration Tool</h1>
+  <div class="note">
+    Drag the sliders to position each element exactly where it should appear on the card.<br>
+    When everything looks right, copy the values from the green box at the bottom and send them.
+  </div>
+
+  <div class="controls">
+    <div class="group">
+      <h3>📷 Photo Circle</h3>
+      <label>Center X: <span class="val" id="pcx_val">362</span></label>
+      <input type="range" id="pcx" min="50" max="900" value="362" oninput="draw()">
+      <label>Center Y: <span class="val" id="pcy_val">611</span></label>
+      <input type="range" id="pcy" min="50" max="1400" value="611" oninput="draw()">
+      <label>Radius: <span class="val" id="pr_val">195</span></label>
+      <input type="range" id="pr" min="50" max="350" value="195" oninput="draw()">
+    </div>
+
+    <div class="group">
+      <h3>📝 NAME text position</h3>
+      <label>X: <span class="val" id="nx_val">325</span></label>
+      <input type="range" id="nx" min="50" max="900" value="325" oninput="draw()">
+      <label>Y: <span class="val" id="ny_val">787</span></label>
+      <input type="range" id="ny" min="500" max="1400" value="787" oninput="draw()">
+      <label>Font size: <span class="val" id="nf_val">42</span></label>
+      <input type="range" id="nf" min="20" max="80" value="42" oninput="draw()">
+    </div>
+
+    <div class="group">
+      <h3>💼 POST text position</h3>
+      <label>X: <span class="val" id="px_val">325</span></label>
+      <input type="range" id="px" min="50" max="900" value="325" oninput="draw()">
+      <label>Y: <span class="val" id="py_val">871</span></label>
+      <input type="range" id="py" min="500" max="1400" value="871" oninput="draw()">
+      <label>Font size: <span class="val" id="pf_val">38</span></label>
+      <input type="range" id="pf" min="20" max="80" value="38" oninput="draw()">
+    </div>
+
+    <div class="group">
+      <h3>✍️ Signature</h3>
+      <label>X: <span class="val" id="sx_val">139</span></label>
+      <input type="range" id="sx" min="50" max="700" value="139" oninput="draw()">
+      <label>Y: <span class="val" id="sy_val">1001</span></label>
+      <input type="range" id="sy" min="700" max="1400" value="1001" oninput="draw()">
+      <label>Width: <span class="val" id="sw_val">325</span></label>
+      <input type="range" id="sw" min="100" max="700" value="325" oninput="draw()">
+      <label>Height: <span class="val" id="sh_val">93</span></label>
+      <input type="range" id="sh" min="40" max="200" value="93" oninput="draw()">
+    </div>
+  </div>
+
+  <button onclick="draw()">🔄 Redraw</button>
+  <button onclick="copyCoords()" style="margin-left:10px; background:#f5a623;">📋 Copy Coordinates</button>
+
+  <canvas id="c"></canvas>
+
+  <div id="coords">Adjust sliders then click "Copy Coordinates"</div>
+
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    img.src = '/id-card-template.png';
+    img.onload = () => { canvas.width = img.naturalWidth; canvas.height = img.naturalHeight; draw(); };
+
+    function v(id) { const el = document.getElementById(id); const val = parseInt(el.value); document.getElementById(id+'_val').textContent = val; return val; }
+
+    function draw() {
+      if (!img.complete || !img.naturalWidth) return;
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+
+      // Draw template
+      ctx.drawImage(img, 0, 0);
+
+      const pcx = v('pcx'), pcy = v('pcy'), pr = v('pr');      const nx = v('nx'), ny = v('ny'), nf = v('nf');
+      const px = v('px'), py = v('py'), pf = v('pf');
+      const sx = v('sx'), sy = v('sy'), sw = v('sw'), sh = v('sh');
+
+      // Draw photo circle (red outline + semi-transparent fill)
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(pcx, pcy, pr, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,0,0,0.9)';
+      ctx.lineWidth = 8;
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,100,100,0.35)';
+      ctx.fill();
+      ctx.restore();
+
+      // Draw photo circle crosshair
+      ctx.save();
+      ctx.strokeStyle = 'red';
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(pcx-30, pcy); ctx.lineTo(pcx+30, pcy); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(pcx, pcy-30); ctx.lineTo(pcx, pcy+30); ctx.stroke();
+      ctx.restore();
+
+      // Draw NAME text position (blue)
+      ctx.save();
+      ctx.font = `bold ${nf}px Arial, sans-serif`;
+      ctx.fillStyle = 'rgba(0,100,255,0.85)';
+      ctx.fillText('Tugga Usman Tanko', nx, ny);
+      ctx.strokeStyle = 'blue';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(nx-2, ny-nf, 400, nf+10);
+      ctx.restore();
+
+      // Draw POST text position (green)
+      ctx.save();
+      ctx.font = `${pf}px Arial, sans-serif`;
+      ctx.fillStyle = 'rgba(0,180,0,0.85)';
+      ctx.fillText('Enrollment Officer', px, py);
+      ctx.strokeStyle = 'green';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(px-2, py-pf, 350, pf+10);
+      ctx.restore();
+
+      // Draw signature box (orange)
+      ctx.save();
+      ctx.strokeStyle = 'orange';
+      ctx.lineWidth = 6;
+      ctx.strokeRect(sx, sy, sw, sh);
+      ctx.fillStyle = 'rgba(255,165,0,0.25)';
+      ctx.fillRect(sx, sy, sw, sh);
+      ctx.fillStyle = 'orange';
+      ctx.font = 'bold 28px Arial';
+      ctx.fillText('SIGNATURE', sx+10, sy+sh/2+10);
+      ctx.restore();
+
+      updateCoords(pcx, pcy, pr, nx, ny, nf, px, py, pf, sx, sy, sw, sh);
+    }
+
+    function updateCoords(pcx, pcy, pr, nx, ny, nf, px, py, pf, sx, sy, sw, sh) {
+      document.getElementById('coords').textContent =
+`// Copy these values into idCardUtils.ts:
+
+PHOTO_BOUNDS = { x: ${pcx-pr}, y: ${pcy-pr}, width: ${pr*2}, height: ${pr*2} }
+NAME_POSITION = { x: ${nx}, y: ${ny} }   // font: bold ${nf}px
+POST_POSITION = { x: ${px}, y: ${py} }   // font: ${pf}px
+SIGNATURE_BOUNDS = { x: ${sx}, y: ${sy}, width: ${sw}, height: ${sh} }`;
+    }
+
+    function copyCoords() {
+      const text = document.getElementById('coords').textContent;
+      navigator.clipboard.writeText(text).then(() => alert('Copied to clipboard!'));
+    }
+  </script>
+</body>
+</html>

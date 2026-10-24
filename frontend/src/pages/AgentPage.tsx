@@ -322,11 +322,17 @@ export default function AgentPage({ user }: Props) {
     const formattedDate = `${dy}-${monthNames[parseInt(mo) - 1]}-${yr}`;
 
     try {
-      // Fetch the PDF template from the public folder
       const { PDFDocument, rgb, StandardFonts } = await import('pdf-lib');
-      const response = await fetch('/intro-letter-template.pdf');
-      if (!response.ok) throw new Error('Template PDF not found. Please contact the administrator.');
-      const existingPdfBytes = await response.arrayBuffer();
+      const { getIntroLetterTemplateBytes } = await import('../assets/introLetterTemplate');
+
+      // Use the template embedded in the bundle (immune to Firebase rewrites /
+      // missing deployed files). Guard against a corrupted download that would
+      // otherwise surface as a confusing pdf-lib "No PDF header found" error.
+      const existingPdfBytes = getIntroLetterTemplateBytes();
+      const header = new TextDecoder().decode(existingPdfBytes.slice(0, 5));
+      if (header !== '%PDF-') {
+        throw new Error('The letter template is corrupted. Please contact the administrator.');
+      }
 
       // Load the PDF with lenient parsing options
       const pdfDoc = await PDFDocument.load(existingPdfBytes, {

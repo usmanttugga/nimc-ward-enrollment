@@ -760,6 +760,18 @@ export default function AdminPage({ user: _user }: Props) {
     }
   }
 
+  async function handleUnlockAccountDetails(agent: Agent) {
+    if (!window.confirm(`Unlock account details for "${agent.name}"?\n\nThe existing details will be kept, and the agent will be able to edit and re-submit them.`)) return;
+    try {
+      await updateDoc(doc(db, 'users', agent.id), { accountLocked: false });
+      setAccountAgents(prev => prev.map(a =>
+        a.id === agent.id ? { ...a, accountLocked: false } : a
+      ));
+    } catch (err: any) {
+      alert('Failed to unlock account details: ' + err.message);
+    }
+  }
+
   async function handleEditAccountSave(e: React.FormEvent) {
     e.preventDefault();
     if (!editAccountAgent) return;
@@ -2227,6 +2239,7 @@ export default function AdminPage({ user: _user }: Props) {
                           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Account Number</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Account Name</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Bank Name</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
                         </tr>
                       </thead>
@@ -2258,11 +2271,24 @@ export default function AdminPage({ user: _user }: Props) {
                               </>
                             )}
                             <td className="px-4 py-3.5">
-                              <div className="flex gap-1.5">
+                              {a.accountLocked ? (
+                                <span className="inline-flex items-center bg-amber-100 text-amber-700 text-xs font-medium px-2.5 py-1 rounded-full">🔒 Locked</span>
+                              ) : (
+                                <span className="inline-flex items-center bg-green-100 text-green-700 text-xs font-medium px-2.5 py-1 rounded-full">🔓 Unlocked</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <div className="flex flex-wrap gap-1.5">
                                 <button onClick={() => openEditAccount(a)}
                                   className="text-xs text-teal-600 hover:text-teal-800 border border-teal-200 hover:border-teal-400 bg-teal-50 hover:bg-teal-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">
                                   Edit
                                 </button>
+                                {a.accountLocked && (
+                                  <button onClick={() => handleUnlockAccountDetails(a)}
+                                    className="text-xs text-amber-600 hover:text-amber-800 border border-amber-200 hover:border-amber-400 bg-amber-50 hover:bg-amber-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">
+                                    Unlock
+                                  </button>
+                                )}
                                 {(a.accountNumber || a.accountName || a.bankName) && (
                                   <button onClick={() => handleDeleteAccountDetails(a)}
                                     className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 bg-red-50 hover:bg-red-100 px-2.5 py-1.5 rounded-lg transition-colors font-medium">

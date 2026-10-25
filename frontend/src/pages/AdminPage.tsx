@@ -10,13 +10,18 @@ import Logo from '../components/Logo';
 import ChangePasswordForm from '../components/ChangePasswordForm';
 import SetPasswordModal from '../components/SetPasswordModal';
 import {
-  filterAgentsByDeviceId,
   buildEnrollmentLogDocument,
   buildEnrollmentLogPatch,
   formatMonthRange,
   sortEnrollmentLogs,
   EnrollmentLog,
 } from '../enrollmentLogUtils';
+import {
+  filterAgentsByQuery,
+  matchesQuery,
+  matchesRecordWithAgents,
+  AgentSearchable,
+} from '../agentSearchUtils';
 import {
   PersonalizationRecord,
   AgentPersonalizationSummary,
@@ -120,7 +125,7 @@ export default function AdminPage({ user: _user }: Props) {
   const [enrollmentLogsByAgent, setEnrollmentLogsByAgent] = useState<Record<string, EnrollmentLog[]>>({});
   const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
   const [loadingLogsForAgent, setLoadingLogsForAgent] = useState<string | null>(null);
-  const [deviceIdSearch, setDeviceIdSearch] = useState('');
+  const [logAgentSearch, setLogAgentSearch] = useState('');
   const [enrollmentLogPage, setEnrollmentLogPage] = useState(0);
   const ENROLLMENT_LOG_PAGE_SIZE = 20;
   // Add Log Form
@@ -161,7 +166,7 @@ export default function AdminPage({ user: _user }: Props) {
   const [accountAgents, setAccountAgents] = useState<Agent[]>([]);
   const [loadingAccountAgents, setLoadingAccountAgents] = useState(false);
   const [accountAgentsError, setAccountAgentsError] = useState('');
-  const [accountDeviceIdSearch, setAccountDeviceIdSearch] = useState('');
+  const [accountAgentSearch, setAccountAgentSearch] = useState('');
   const [accountPage, setAccountPage] = useState(0);
   const ACCOUNT_PAGE_SIZE = 20;
   // Edit account details modal
@@ -324,6 +329,16 @@ export default function AdminPage({ user: _user }: Props) {
 
   useEffect(() => { loadGeoData().then(setGeoData); }, []);
 
+  // Load agents once on mount so every tab (Enrollment Records, Enrollment Log,
+  // Personalization, Account Details) can search by name, email, Device ID and DROID No.
+  useEffect(() => { loadAgents(); }, []);
+
+  // Lookup maps so record-based tabs can resolve an agent's email / Device ID / DROID No.
+  const agentsById = new Map<string, AgentSearchable>(agents.map(a => [a.id, a]));
+  const agentsByEmail = new Map<string, AgentSearchable>(
+    agents.filter(a => !!a.email).map(a => [a.email!.toLowerCase(), a])
+  );
+
   useEffect(() => {
     setLoading(true);
     if (tab === 'enrollments') {
@@ -342,8 +357,10 @@ export default function AdminPage({ user: _user }: Props) {
 
   const hasFilters = search || dateFrom || dateTo;
   const filtered = enrollments.filter(r => {
-    const q = search.toLowerCase();
-    const matchSearch = !q || [r.agentName, r.stateName, r.lgaName, r.wardName, r.deviceId].some(v => v?.toLowerCase().includes(q));
+    // Search by agent identity (name, email, Device ID, DROID No.) OR location fields
+    const matchSearch =
+      matchesRecordWithAgents(search, { agentName: r.agentName, agentEmail: r.agentEmail }, agentsById, agentsByEmail) ||
+      matchesQuery(search, r.stateName, r.lgaName, r.wardName, r.deviceId);
     return matchSearch && (!dateFrom || r.date >= dateFrom) && (!dateTo || r.date <= dateTo);
   });
   const totalFigures = filtered.reduce((sum, r) => sum + (r.dailyFigures || 0), 0);
@@ -352,15 +369,7 @@ export default function AdminPage({ user: _user }: Props) {
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-  const filteredAgents = agents.filter(a => {
-    if (!agentSearch.trim()) return true;
-    const q = agentSearch.toLowerCase();
-    return a.name?.toLowerCase().includes(q) ||
-      a.email?.toLowerCase().includes(q) ||
-      (a.deviceId ?? '').toLowerCase().includes(q) ||
-      (a.phone ?? '').toLowerCase().includes(q) ||
-      (a.deviceDroidNumber ?? '').toLowerCase().includes(q);
-  });
+  const filteredAgents = filterAgentsByQuery(agents, agentSearch);
   const agentTotalPages = Math.ceil(filteredAgents.length / AGENT_PAGE_SIZE);
   const paginatedAgents = filteredAgents.slice(agentPage * AGENT_PAGE_SIZE, (agentPage + 1) * AGENT_PAGE_SIZE);
 
@@ -731,7 +740,7 @@ export default function AdminPage({ user: _user }: Props) {
     }
   }
 
-  const filteredAccountAgents = filterAgentsByDeviceId(accountAgents, accountDeviceIdSearch);
+  const filteredAccountAgents = filterAgentsByQuery(accountAgents, accountAgentSearch);
 
   function openEditAccount(agent: Agent) {
     setEditAccountAgent(agent);
@@ -861,7 +870,7 @@ export default function AdminPage({ user: _user }: Props) {
     const wb = XLSX.utils.book_new();
     const summaries = computeAgentPersonalizationSummaries(adminPersRecords);
     const filteredSummaries = summaries.filter((s: AgentPersonalizationSummary) =>
-      !persAgentSearch || s.agentName.toLowerCase().includes(persAgentSearch.toLowerCase())
+      matchesRecordWithAgents(persAgentSearch, { agentId: s.agentId, agentName: s.agentName }, agentsById, agentsByEmail)
     );
     const wsData: string[][] = [
       ['S/No.', 'Agent Name', 'Total Personalization', 'Entries Count', 'Date Range'],
@@ -885,9 +894,12 @@ export default function AdminPage({ user: _user }: Props) {
     const today = new Date().toISOString().split('T')[0];
     const fileName = `all-bulk-personalization-records-${today}.xlsx`;
     const wb = XLSX.utils.book_new();
+    const filteredRecords = adminPersRecords.filter(r =>
+      matchesRecordWithAgents(persAgentSearch, { agentId: r.agentId, agentName: r.agentName }, agentsById, agentsByEmail)
+    );
     const wsData: string[][] = [
       ['S/No.', 'Agent Name', 'Date', 'Count', 'Submitted At'],
-      ...adminPersRecords.map((r, i) => [
+      ...filteredRecords.map((r, i) => [
         String(i + 1),
         r.agentName || '',
         r.personalizationDate || '',
@@ -1296,7 +1308,7 @@ export default function AdminPage({ user: _user }: Props) {
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
-                  <input type="text" placeholder="Search agent, state, LGA, ward..." value={search}
+                  <input type="text" placeholder="Search by name, email, Device ID, DROID No., state, LGA, ward..." value={search}
                     onChange={e => { setSearch(e.target.value); setPage(0); }}
                     className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-gray-50" />
                 </div>
@@ -1704,20 +1716,20 @@ export default function AdminPage({ user: _user }: Props) {
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
-                <input type="text" placeholder="Search by Device ID..." value={deviceIdSearch}
-                  onChange={e => { setDeviceIdSearch(e.target.value); setEnrollmentLogPage(0); }}
+                <input type="text" placeholder="Search by name, email, Device ID or DROID No...." value={logAgentSearch}
+                  onChange={e => { setLogAgentSearch(e.target.value); setEnrollmentLogPage(0); }}
                   className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-gray-50" />
               </div>
             </div>
 
             {(() => {
-              const filteredAgents = filterAgentsByDeviceId(agents, deviceIdSearch);
+              const filteredAgents = filterAgentsByQuery(agents, logAgentSearch);
               const elTotalPages = Math.ceil(filteredAgents.length / ENROLLMENT_LOG_PAGE_SIZE);
               const paginatedElAgents = filteredAgents.slice(enrollmentLogPage * ENROLLMENT_LOG_PAGE_SIZE, (enrollmentLogPage + 1) * ENROLLMENT_LOG_PAGE_SIZE);
               if (filteredAgents.length === 0) {
                 return (
                   <div className="text-center py-16 text-gray-400">
-                    <p className="font-medium">{deviceIdSearch ? 'No agents found' : 'No agents registered yet.'}</p>
+                    <p className="font-medium">{logAgentSearch ? 'No agents found' : 'No agents registered yet.'}</p>
                   </div>
                 );
               }
@@ -1906,15 +1918,15 @@ export default function AdminPage({ user: _user }: Props) {
                   </button>
                 </div>
 
-                {persViewMode === 'agentSummary' && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <input
-                      type="text"
-                      placeholder="Search agent name..."
-                      value={persAgentSearch}
-                      onChange={e => { setPersAgentSearch(e.target.value); setPersSummaryPage(0); }}
-                      className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-400 bg-gray-50"
-                    />
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="Search by name, email, Device ID or DROID No...."
+                    value={persAgentSearch}
+                    onChange={e => { setPersAgentSearch(e.target.value); setPersSummaryPage(0); setPersAllPage(0); }}
+                    className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-400 bg-gray-50"
+                  />
+                  {persViewMode === 'agentSummary' && (
                     <button
                       onClick={exportAgentPersonalizationExcel}
                       className="flex items-center gap-1.5 bg-teal-700 hover:bg-teal-800 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors shadow-sm"
@@ -1924,8 +1936,8 @@ export default function AdminPage({ user: _user }: Props) {
                       </svg>
                       Export Summary Excel
                     </button>
-                  </div>
-                )}
+                  )}
+                </div>
                 
                 {persViewMode === 'allRecords' && (
                   <div className="flex flex-wrap items-center gap-2">
@@ -1968,7 +1980,7 @@ export default function AdminPage({ user: _user }: Props) {
             {!loadingAdminPers && persViewMode === 'agentSummary' && adminPersRecords.length > 0 && (() => {
               const summaries = computeAgentPersonalizationSummaries(adminPersRecords);
               const filteredSummaries = summaries.filter((s: AgentPersonalizationSummary) =>
-                !persAgentSearch || s.agentName.toLowerCase().includes(persAgentSearch.toLowerCase())
+                matchesRecordWithAgents(persAgentSearch, { agentId: s.agentId, agentName: s.agentName }, agentsById, agentsByEmail)
               );
               if (filteredSummaries.length === 0) {
                 return <p className="text-gray-400 text-sm text-center py-8">No agents found matching search.</p>;
@@ -2050,8 +2062,14 @@ export default function AdminPage({ user: _user }: Props) {
 
             {/* View 2: All Individual Records Table */}
             {!loadingAdminPers && persViewMode === 'allRecords' && adminPersRecords.length > 0 && (() => {
-              const allTotalPages = Math.ceil(adminPersRecords.length / PERS_PAGE_SIZE);
-              const paginatedPersRecords = adminPersRecords.slice(persAllPage * PERS_PAGE_SIZE, (persAllPage + 1) * PERS_PAGE_SIZE);
+              const filteredPersRecords = adminPersRecords.filter(r =>
+                matchesRecordWithAgents(persAgentSearch, { agentId: r.agentId, agentName: r.agentName }, agentsById, agentsByEmail)
+              );
+              if (filteredPersRecords.length === 0) {
+                return <p className="text-gray-400 text-sm text-center py-8">No records found matching search.</p>;
+              }
+              const allTotalPages = Math.ceil(filteredPersRecords.length / PERS_PAGE_SIZE);
+              const paginatedPersRecords = filteredPersRecords.slice(persAllPage * PERS_PAGE_SIZE, (persAllPage + 1) * PERS_PAGE_SIZE);
               return (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -2097,7 +2115,7 @@ export default function AdminPage({ user: _user }: Props) {
                 {allTotalPages > 1 && (
                   <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-t border-gray-100">
                     <span className="text-sm text-gray-500">
-                      {adminPersRecords.length} records · Page {persAllPage + 1} of {allTotalPages}
+                      {filteredPersRecords.length} records · Page {persAllPage + 1} of {allTotalPages}
                     </span>
                     <div className="flex flex-wrap items-center gap-1">
                       <button onClick={() => setPersAllPage(p => p - 1)} disabled={persAllPage === 0}
@@ -2199,8 +2217,8 @@ export default function AdminPage({ user: _user }: Props) {
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
-                <input type="text" placeholder="Search by Device ID..." value={accountDeviceIdSearch}
-                  onChange={e => { setAccountDeviceIdSearch(e.target.value); setAccountPage(0); }}
+                <input type="text" placeholder="Search by name, email, Device ID or DROID No...." value={accountAgentSearch}
+                  onChange={e => { setAccountAgentSearch(e.target.value); setAccountPage(0); }}
                   className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-gray-50" />
               </div>
             </div>
@@ -2221,7 +2239,7 @@ export default function AdminPage({ user: _user }: Props) {
               </div>
             ) : filteredAccountAgents.length === 0 ? (
               <div className="text-center py-16 text-gray-400">
-                <p className="font-medium">{accountDeviceIdSearch ? 'No agents found' : 'No agents registered yet.'}</p>
+                <p className="font-medium">{accountAgentSearch ? 'No agents found' : 'No agents registered yet.'}</p>
               </div>
             ) : (
               <>
